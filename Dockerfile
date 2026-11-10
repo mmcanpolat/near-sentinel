@@ -9,4 +9,4 @@ USER node
 ENV HOST=0.0.0.0 PORT=3000 SENTINEL_DATA_DIR=/app/data
 EXPOSE 3000
 HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
-CMD ["node", "src/server.js"]
+CMD ["node", "src/start.js"]

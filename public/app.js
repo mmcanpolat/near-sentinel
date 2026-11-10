@@ -9,11 +9,17 @@ const h = (tag, props = {}, ...kids) => {
   return e;
 };
 const api = async (path, opts) => {
-  const r = await fetch(path, { ...opts, headers: { 'content-type': 'application/json' }, body: opts?.body ? JSON.stringify(opts.body) : undefined });
+  let r;
+  try {
+    r = await fetch(path, { ...opts, headers: { 'content-type': 'application/json' }, body: opts?.body ? JSON.stringify(opts.body) : undefined, signal: AbortSignal.timeout(90000) });
+  } catch (e) {
+    throw Object.assign(new Error(e?.name === 'TimeoutError' ? 'This is taking too long; the public NEAR RPC may be busy.' : 'Cannot reach the local Sentinel server. Is it still running (npm start)?'), { retryable: true });
+  }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  if (!r.ok) throw Object.assign(new Error(j.error || `Request failed (${r.status})`), { retryable: r.status === 503 || r.status === 429 });
   return j;
 };
+const DEFAULT_PREVIEW = 'near';
 
 let account = '';           // account used for building/checking
 let walletAccount = '';     // set only when a real wallet is connected (the only way to sign)
@@ -24,9 +30,12 @@ const EXAMPLES = [
   'balance', 'validators', 'send 0.1 NEAR to root.near', 'send 50 NEAR to root.near',
   'swap 1 NEAR to USDC', 'quote 1 NEAR to USDC on base', 'stake 1 NEAR with metapool',
   'create agent key for wrap.near methods near_deposit allowance 0.05', 'list keys', 'show policy',
+  'dao ref-finance.sputnik-dao.near', 'proposals of ref-finance.sputnik-dao.near',
 ];
 
 function setAccount(a, wallet) {
+  if (!a) { a = DEFAULT_PREVIEW; wallet = false; } // never empty: judges see working cards without a wallet
+  $('preview').value = wallet ? '' : a;
   account = a; walletAccount = wallet ? a : '';
   $('acct').textContent = a ? (wallet ? a : `${a} (preview)`) : '';
   $('connect').textContent = wallet ? 'Disconnect' : 'Connect NEAR wallet';
@@ -50,6 +59,7 @@ $('connect').onclick = async () => {
   } catch (e) { say('bot', /reject|cancel|closed|denied/i.test(String(e?.message)) ? 'Wallet connection cancelled.' : 'Could not open the NEAR wallet. You can still preview any public account below.'); }
 };
 $('usePreview').onclick = () => { const v = $('preview').value.trim().toLowerCase(); if (v) setAccount(v, false); };
+$('preview').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('usePreview').click(); } });
 
 function say(who, text) { const m = h('div', { class: `msg ${who}` }, text); $('log').append(m); $('log').scrollTop = 1e9; return m; }
 
@@ -101,14 +111,19 @@ $('form').onsubmit = async (ev) => {
     const r = await api('/api/chat', { method: 'POST', body: { messages: history, account } });
     wait.textContent = r.reply || 'Done.'; history.push({ role: 'assistant', content: r.reply || '' });
     r.cards.forEach(renderCard);
-  } catch (e) { wait.textContent = e.message; }
+    if (/RPC unavailable|rate-limit/i.test(r.reply || '')) wait.append(' ', retryButton(text));
+  } catch (e) { wait.textContent = e.message; wait.classList.add('err'); if (e.retryable) wait.append(' ', retryButton(text)); }
   $('send').disabled = false; $('input').focus();
 };
+function retryButton(text) {
+  return h('button', { type: 'button', class: 'retry', onclick: () => { $('input').value = text; $('form').requestSubmit(); } }, 'Try again');
+}
 
 // ---- policy panel
 const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
 async function loadPolicy() {
-  const p = await api(`/api/policy?account=${encodeURIComponent(account)}`);
+  let p;
+  try { p = await api(`/api/policy?account=${encodeURIComponent(account)}`); } catch (e) { $('saved').textContent = e.message; return; }
   const n = p.limits.near || {};
   $('p-near-pertx').value = n.perTx ?? ''; $('p-near-daily').value = n.daily ?? ''; $('p-near-confirm').value = n.confirmAbove ?? '';
   $('p-unlisted').value = p.unlistedToken; $('p-rmode').value = p.recipients.mode; $('p-rlist').value = p.recipients.list.join('\n');
@@ -129,7 +144,8 @@ $('save').onclick = async () => {
 };
 async function loadLedger() {
   if (!account) return;
-  const rows = await api(`/api/ledger?account=${encodeURIComponent(account)}`);
+  let rows;
+  try { rows = await api(`/api/ledger?account=${encodeURIComponent(account)}`); } catch (e) { $('ledger').textContent = e.message; return; }
   $('ledger').replaceChildren(rows.length ? h('ul', {}, rows.map((r) => h('li', {}, `${new Date(r.ts).toLocaleTimeString()}: ${r.amount} raw units of ${r.token} to ${r.to}`))) : h('span', { class: 'hint' }, 'Nothing confirmed in the last 24h.'));
 }
 document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => {
@@ -139,5 +155,5 @@ document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => {
 
 for (const ex of EXAMPLES) $('chips').append(h('button', { type: 'button', onclick: () => { $('input').value = ex; $('input').focus(); } }, ex));
 api('/api/config').then((c) => { $('mode').textContent = c.mode === 'llm' ? `LLM: ${c.model}` : 'offline commands (no LLM key)'; });
-say('bot', 'I prepare NEAR transactions, check them against the live chain and your safety policy, and hand them to your wallet. I never hold a key. Connect a wallet, or preview any public account below. Try a chip under this box.');
+say('bot', 'I prepare NEAR transactions, check them against the live chain and your safety policy, and hand them to your wallet. I never hold a key. You are previewing the public account \"near\" (read-only): building, live checks and policy verdicts all work, only signing needs a wallet. Click a chip under this box, or connect your wallet.');
 setAccount('', false);

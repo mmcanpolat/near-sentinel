@@ -3,17 +3,26 @@
 const DEFAULT_RPC = ['https://free.rpc.fastnear.com', 'https://rpc.mainnet.fastnear.com', 'https://rpc.mainnet.near.org'];
 const urls = () => (process.env.NEAR_RPC_URL ? [process.env.NEAR_RPC_URL] : DEFAULT_RPC);
 
-export class NearError extends Error {}
+export class NearError extends Error {
+  constructor(message, extra) { super(message); this.name = 'NearError'; if (extra) Object.assign(this, extra); }
+}
 
 const cache = new Map(); // identical reads within 4s share one answer (keeps us under public rate limits)
+const inflight = new Map(); // the same read asked twice at once shares one request
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 const TRANSIENT = /rate limit|too many|timeout|temporar|unavailable|overload/i;
 
-export async function rpc(method, params) {
+export function rpc(method, params) {
   const key = method + JSON.stringify(params);
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < 4000) return hit.value;
-  let last = 'no NEAR RPC answered';
-  for (let round = 0; round < 2; round++) {
+  if (hit && Date.now() - hit.at < 4000) return Promise.resolve(hit.value);
+  if (!inflight.has(key)) inflight.set(key, rpcOnce(method, params, key).finally(() => inflight.delete(key)));
+  return inflight.get(key);
+}
+
+async function rpcOnce(method, params, key) {
+  let last = 'no NEAR RPC answered', limited = false;
+  for (let round = 0; round < 3; round++) {
     for (const url of urls()) {
       try {
         const r = await fetch(url, {
@@ -23,11 +32,11 @@ export async function rpc(method, params) {
           signal: AbortSignal.timeout(15000),
         });
         const text = await r.text();
-        if (r.status === 429 || r.status >= 500) { last = `HTTP ${r.status}`; continue; }
+        if (r.status === 429 || r.status >= 500) { last = `HTTP ${r.status}`; limited ||= r.status === 429; continue; }
         const j = JSON.parse(text);
         if (j.error) {
           const msg = j.error.data && typeof j.error.data === 'string' ? j.error.data : j.error.cause?.name || j.error.message;
-          if (TRANSIENT.test(String(msg)) || TRANSIENT.test(String(j.error.message))) { last = String(msg); continue; }
+          if (TRANSIENT.test(String(msg)) || TRANSIENT.test(String(j.error.message))) { last = String(msg); limited ||= /rate limit|too many/i.test(last); continue; }
           throw Object.assign(new NearError(msg), { rpcCause: j.error.cause?.name });
         }
         // Some nodes report query failures inside `result` instead of `error`.
@@ -43,9 +52,9 @@ export async function rpc(method, params) {
         last = e.message;
       }
     }
-    await new Promise((res) => setTimeout(res, 600));
+    await sleep(Number(process.env.SENTINEL_RPC_BACKOFF_MS ?? 500) * 2 ** round); // 0.5s, 1s, 2s
   }
-  throw new NearError(`NEAR RPC unavailable: ${last}`);
+  throw new NearError(`NEAR RPC unavailable: ${limited ? 'the public endpoints are rate-limiting this machine' : last}. Wait a few seconds and retry, or set NEAR_RPC_URL to your own endpoint.`, { retryable: true });
 }
 
 /** Account state or null when the account does not exist. */

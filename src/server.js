@@ -62,14 +62,23 @@ export function createServer() {
       res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream', 'x-content-type-options': 'nosniff' });
       fs.createReadStream(file).pipe(res);
     } catch (e) {
+      if (e.retryable) return json(res, 503, { error: e.message, retryable: true });
       json(res, e.status ?? (e.user ? 400 : 500), { error: e.user || e.status ? e.message : 'Something went wrong. Please try again.' });
       if (!e.user && !e.status) console.error(e);
     }
   });
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+export function startServer() {
   try { process.loadEnvFile('.env'); } catch { /* no .env: offline mode */ }
   const port = Number(process.env.PORT ?? 3000), host = process.env.HOST ?? '127.0.0.1';
-  createServer().listen(port, host, () => console.log(`Sentinel on http://${host}:${port}  (${llmConfigured() ? 'LLM mode' : 'offline command mode, no LLM key'})`));
+  const srv = createServer();
+  srv.on('error', (e) => {
+    console.error(e.code === 'EADDRINUSE' ? `Port ${port} is already in use. Start on another one:  PORT=3001 npm start` : `Server error: ${e.message}`);
+    process.exit(1);
+  });
+  srv.listen(port, host, () => console.log(`NEAR Sentinel on http://${host}:${port}  (${llmConfigured() ? 'LLM mode' : 'offline command mode, no LLM key needed'})`));
+  return srv;
 }
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) startServer();

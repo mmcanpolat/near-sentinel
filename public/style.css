@@ -25,3 +25,4 @@ form{display:flex;gap:8px}input,select,textarea{font:inherit;color:var(--text);b
 aside label{display:block;font-size:12.5px;color:var(--muted);margin:8px 0}aside label input,aside label select,aside label textarea{margin-top:3px;color:var(--text)}
 .tabs{display:flex;gap:4px;margin-bottom:8px}.tabs button{flex:1;font-size:13px;padding:5px}.tabs .on{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
 .hint{color:var(--muted);font-size:13px;margin:4px 0}code{font-family:ui-monospace,monospace;font-size:12.5px}[hidden]{display:none!important}
+.msg.err{color:var(--bad)}.retry{font-size:12.5px;padding:2px 8px;margin-left:6px}

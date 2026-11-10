@@ -6,7 +6,7 @@
   "license": "MIT",
   "engines": { "node": ">=22" },
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node src/start.js",
     "test": "node --test test/*.test.js",
     "test:live": "LIVE=1 node --test test/*.test.js"
   }

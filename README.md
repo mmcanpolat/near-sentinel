@@ -6,6 +6,21 @@ Built for NEAR HACKATHON (November 2026). Tracks: Unstoppable DeFi, Agent Econom
 
 Zero npm dependencies. Node 22+ only. One command to run: `npm start` (no install step, no API key, no wallet needed).
 
+## What to try in 60 seconds
+
+```bash
+git clone https://github.com/mmcanpolat/near-sentinel && cd near-sentinel
+npm run selftest          # 5 s, offline: PASS/FAIL table for every track requirement below
+LIVE=1 npm run selftest   # same + read-only checks against NEAR mainnet (RPC, MPC contract, Sputnik, Intents quote)
+npm start                 # http://127.0.0.1:3000, no key, no wallet, no install step
+```
+
+In the page (it previews the public account `near`), paste these three lines:
+
+1. `send 50 NEAR to root.near` : a red **Blocked** card, "Cannot be signed", with the live chain checks that ran.
+2. `derive addresses for ethereum-1` (or the **Cross-chain** tab) : the Ethereum and Bitcoin addresses this NEAR account controls through NEAR Chain Signatures, read from the MPC contract and re-derived locally.
+3. `sign payload 0x<64 hex> path ethereum-1` : an unsigned `v1.signer.sign` call (1 yocto) that runs through the same policy and needs a tick. Then open **Activity**: every proposal above is in the **agent safety report** with its verdict, checks and reason; **Download JSON** exports it.
+
 ## The problem
 
 AI agents that move money have two bad options today: hold a key (one prompt injection empties the wallet) or ask the user to sign blindly (the user cannot tell what a hex blob does). NEAR has unusually good primitives for a third way, function-call access keys and NEAR Intents, but nothing ties them together into a safe agent workflow.
@@ -19,7 +34,14 @@ AI agents that move money have two bad options today: hold a key (one prompt inj
 5. **NEAR Intents cross-chain** (`src/near/builders.js`): `intents_swap` sells a NEAR-side token and delivers on Ethereum, Base, Arbitrum, Solana, Bitcoin, Robinhood Chain and the other chains NEAR Intents serves (1Click API; the refund address is your NEAR account). `intents_receive` is for the **agent economy**: it creates a payment request, so a payer on another chain pays a one-time deposit address and the agent's NEAR account receives a NEAR token. The one-time deposit address is accepted by the policy only because a trusted builder produced it.
 6. **Sputnik DAO v2** (`src/near/sputnik.js`, Social Money): read a DAO (roles, bond, treasury, proposals), create proposals (NEAR/token transfer, poll, add/remove member, function call), vote (approve / reject / remove) and finalize an expired proposal. The DAO's live `get_policy` is read first: the app refuses when your account has no role that grants `<kind>:AddProposal` / `<kind>:VoteApprove`, when the proposal is closed or expired, or when you already voted. The proposal bond is read from the policy and attached exactly, and counts as a NEAR spend. The policy engine only lets an agent create Transfer, Vote, AddMemberToRole, RemoveMemberFromRole and FunctionCall proposals (policy changes and upgrades are human-only), asks for confirmation on function-call proposals, on approving governance-changing proposals and on `VoteRemove`.
 7. **NEAR actions**: send NEAR / NEP-141 tokens, wrap/unwrap, validator staking pools (with fee, uptime and stake share comparison), Meta Pool (stNEAR), LiNEAR, Ref Finance swaps (Ref router, priced by Ref's contract), Burrow lending supply, NEP-171 NFT transfer, NEAR Social posts, balances and NFT reads.
-8. **LLM tool layer** (`src/agent/`): OpenAI-compatible tool-calling loop (OpenAI, NEAR AI Cloud, OpenRouter, Ollama, anything speaking `/chat/completions`). Tools are read-only data plus builders that return checked cards. There is **no tool that signs, broadcasts, or edits the policy**; this is asserted in a test. Without a key, an offline command parser calls the same tools and guard pipeline, so everything below is reproducible with no API key.
+8. **NEAR Chain Signatures inside the guard** (`src/near/chainsig.js`, `src/lib/`): the agent can act on Ethereum, Base and Bitcoin without ever holding a key. For a NEAR account and a derivation path it reads the MPC contract (`v1.signer`: `state` for domains, `config` for gas, `derived_public_key` for the child key), shows the derived EVM and Bitcoin (bech32 and legacy) addresses, and re-derives the same key locally (SHA3 tweak + secp256k1 point addition; keccak256, secp256k1 and bech32 written from scratch, no dependencies). A mismatch between contract and local math refuses the request. `chainsig_prepare_request` builds the unsigned `sign` call (`{request:{path, payload_v2:{Ecdsa}, domain_id}}`, 1 yocto, gas from the contract config) and sends it through the **same policy engine** with new rules: allowed derivation paths (prefix wildcard), allowed domains, a daily cap on signature requests (counted only after the chain confirmed them), exactly 1 yocto deposit, a strict payload shape, and an explicit confirmation tick. The signature call costs 1 yocto, so a function-call key cannot make it: your wallet must approve every one.
+9. **LLM tool layer** (`src/agent/`): OpenAI-compatible tool-calling loop. Tools are read-only data plus builders that return checked cards. There is **no tool that signs, broadcasts, or edits the policy**; `test/agent.test.js` asserts it three ways (tool shapes, source scan, and a run of every tool against a recording RPC that checks only read-only methods were called and the policy file did not change). Default is the offline command parser, which calls the same tools and guard pipeline, so everything here is reproducible with no API key. **NEAR AI Cloud** is a first-class option:
+   ```bash
+   LLM_PROVIDER=near-ai          # base URL https://cloud-api.near.ai/v1, model zai-org/GLM-5.1-FP8 (override with LLM_MODEL)
+   LLM_API_KEY=<key from https://cloud.near.ai>   # REQUIRED; credits must be bought there. Without a key the app stays offline.
+   ```
+   `LLM_BASE_URL` / `LLM_MODEL` override any preset (OpenAI, OpenRouter, Ollama...). The chosen model must support tool calling.
+10. **Agent safety report** (`src/guard/audit.js`, Activity tab, `GET /api/audit`): every action the agent proposes is recorded with the verdict (allowed / confirm / blocked / refused), the policy rules and live checks behind it, a plain-language reason, the transaction digest and later the on-chain outcome. Refusals before a card exists (typo recipient, no balance) are logged too. Entries are hash-chained, so an exported JSON report shows if a line was edited or removed. `Download JSON` or `curl 'http://127.0.0.1:3000/api/audit?account=near&download=1'`.
 
 ## Architecture
 
@@ -39,26 +61,32 @@ AI agents that move money have two bad options today: hold a key (one prompt inj
                                            |    explain.js   (plain words)               |
                                            |    keys.js      (function-call key sandbox) |
                                            |    ledger.js    (counts only settled spend) |
+                                           |    audit.js     (hash-chained safety report)|
+                                           |  near/chainsig.js (MPC views + sign builder)|
                                            +---------------------+-----------------------+
                                                                  |
-                                       NEAR Intents 1Click API, Ref router, FastNEAR API
+                       NEAR Intents 1Click API, Ref router, FastNEAR API, v1.signer (MPC, view calls only)
 ```
 
 Trust boundaries: the LLM sees only tool results; the wallet is the only signer; policy is edited only from the UI (`PUT /api/policy`), never by a tool.
 
 ## Track mapping
 
-| Track | Requirement | Where |
-|---|---|---|
-| AI Security & Defense | Spending limits | `policy.js` limits, daily rolling cap, ledger |
-| | Policy engines | `policy.js`, 27 tests in `test/policy.test.js` and 15 in `test/sputnik.test.js` |
-| | Function-call keys / sandboxed wallets | `keys.js`, `agent_key_create/revoke/check` |
-| | Pre-sign checks, no blind signing | `precheck.js`, `explain.js`, cards |
-| Agent Economy | Agent earns and pays across chains | `intents_receive`, `intents_swap` |
-| | Agent acts autonomously within limits | function-call key + `agent_key_check` |
-| Unstoppable DeFi | Non-custodial DeFi | Ref swap, Burrow, Meta Pool, LiNEAR, pools, Intents; user signs |
-| Open Innovation | Novel UX | chat + live-verified cards + policy panel |
-| Social Money (optional) | Community treasuries / DAOs | `sputnik.js`: propose transfer / poll / member / call, vote, finalize, all through pre-check + policy |
+Every row is checked by `npm run selftest` (offline) and most also by `LIVE=1 npm run selftest`.
+
+| Track | Requirement | Where | Exact command |
+|---|---|---|---|
+| AI Security & Defense | Spending limits, policy engine | `src/guard/policy.js`, ledger | `node --test test/policy.test.js` (27 tests), `send 50 NEAR to root.near` in the UI |
+| | Function-call keys / sandboxed wallets | `src/guard/keys.js`, `agent_key_*` tools | `node --test test/keys.test.js`, `create agent key for wrap.near methods near_deposit allowance 0.05` |
+| | Pre-sign checks, no blind signing | `precheck.js`, `explain.js` | `send 1 NEAR to nonexistentaccount99887.near` (refused from live state) |
+| | Agent cannot sign or edit policy | `src/agent/tools.js` | `node --test test/agent.test.js` |
+| | Auditability | `src/guard/audit.js` | Activity tab, `GET /api/audit?account=near&download=1` |
+| Agent Economy | Agent acts across chains without a key | `src/near/chainsig.js` | `node --test test/chainsig.test.js` (17 tests), `derive addresses for ethereum-1`, `sign payload 0x<64 hex> path ethereum-1` |
+| | Agent earns and pays across chains | `intents_receive`, `intents_swap` | `request 0.01 ETH on base refund 0x00000000000000000000000000000000000dead1` (needs network) |
+| | Autonomous within limits | function-call key + `agent_key_check` | `node --test test/keys.test.js` |
+| Unstoppable DeFi | Non-custodial DeFi | Ref swap, Burrow, Meta Pool, LiNEAR, pools, Intents; user signs | `swap 1 NEAR to USDC` (needs network) |
+| Open Innovation | Novel UX | chat + live-verified cards + policy, Cross-chain and Activity panels | `npm start` |
+| Social Money (optional) | DAO treasuries | `src/near/sputnik.js` | `node --test test/sputnik.test.js` (15 tests), `dao ref-finance.sputnik-dao.near` |
 
 TEE attestation (suggested in the AI Security track) is not implemented; see "Not done".
 
@@ -69,7 +97,7 @@ Requires Node 22+ (no `npm install`, no build step) or Docker. A first-run check
 ```bash
 git clone https://github.com/mmcanpolat/near-sentinel && cd near-sentinel
 npm start                # or: make run      -> http://127.0.0.1:3000
-# optional: cp .env.example .env and add LLM_API_KEY for free-form chat
+# optional: cp .env.example .env and add LLM_API_KEY for free-form chat (LLM_PROVIDER=near-ai for NEAR AI Cloud)
 # or without Node:
 docker compose up --build      # published on 127.0.0.1:3000 only
 ```
@@ -77,8 +105,9 @@ docker compose up --build      # published on 127.0.0.1:3000 only
 Tests:
 
 ```bash
-npm test             # 58 offline tests (policy engine, key sandbox, units, Sputnik DAO against a fake RPC, RPC retry)
-npm run test:live    # 61 tests: + read-only checks against public NEAR mainnet RPC, NEAR Intents quotes, ref-finance.sputnik-dao.near
+npm test             # 81 offline tests pass, 3 live ones skipped (policy engine, key sandbox, Chain Signatures math and rules, tool-layer proofs, audit trail, Sputnik DAO, RPC retry)
+npm run test:live    # all 84: + read-only checks against public NEAR mainnet RPC, NEAR Intents quotes, ref-finance.sputnik-dao.near
+npm run selftest     # PASS/FAIL table per track requirement (LIVE=1 adds read-only mainnet checks)
 ```
 
 The page opens already **previewing the public account `near`**, so every card below works without a wallet; only signing needs one. Type another account in the box under the chat (for example `refchef.near`, a council member of `ref-finance.sputnik-dao.near`) or connect a wallet.
@@ -118,27 +147,30 @@ Wallet flow (needs a real wallet; nothing was signed during development): connec
 
 Verified (2026-11-10, NEAR mainnet via public RPC; **nothing was signed or sent**):
 
-- `npm test`: 58 offline tests pass (3 live ones skipped). `LIVE=1 npm test`: all 61 pass.
+- `npm test`: 81 offline tests pass, 3 live skipped. `LIVE=1 npm test`: all 84 pass. `npm run selftest`: 16 checks pass offline; `LIVE=1 npm run selftest`: 21 of 21 pass.
+- **Chain Signatures read path, live**: `v1.signer` (contract v3.18.0) `state`, `config`, `public_key` and `derived_public_key` were read; for `near` + `ethereum-1` the key the contract returns equals the key this repo derives locally, and the EVM and Bitcoin addresses computed from it match. Offline tests pin three such live-recorded keys as independent vectors, plus published vectors for keccak256, secp256k1 (private keys 1 and 2), BIP-173 P2WPKH and the legacy Bitcoin address.
+- The `sign` argument shape (`payload_v2: {Ecdsa: hex}`, `domain_id`, `path`), the 1 yocto deposit and the "purpose must be Sign" domain check were taken from the near/mpc contract source (`near-mpc-crypto-types`, `contract/src/api/sign.rs`) and the live `state`; tests pin them.
 - Live builders produced well-formed unsigned transactions for NEAR and token sends, wrap, validator-pool / Meta Pool staking, Ref swaps (Ref's contract priced the exact route), Burrow supply, NEAR Social posts, Intents quote, Intents live quote with deposit address, and Intents payment request. Pre-checks refused nonexistent receivers, 0x addresses and over-balance amounts.
-- Sputnik DAO, read-only against `ref-finance.sputnik-dao.near`: `get_policy` (roles, 1 NEAR bond, 7-day period), `get_last_proposal_id`, `get_proposals`, `get_proposal`; a council member gets a correct `add_proposal` card, an outsider and a closed proposal are refused. Argument shapes (`add_proposal {proposal:{description,kind}}` with the bond attached, `act_proposal {id,action}`, kinds Transfer / Vote / AddMemberToRole / RemoveMemberFromRole / FunctionCall) follow the Sputnik v2 interface and the proposals visible on that DAO; the offline tests pin them. Policy-engine, vote-state and permission logic is covered against a fake RPC.
-- The web UI loads previewing `near`, renders blocked cards with a disabled sign button, shows the policy, and shows a "Try again" state when the RPC is throttled. Clean clone + `npm start` and `docker compose up --build` were both run and answered `/api/health` and `/api/chat`.
-- Policy edge cases (rolling window, batches, allowlists, hard rules, decimals, wNEAR counted as NEAR, storage-deposit abuse, DAO method / proposal-kind / deposit rules) are covered by tests.
+- Sputnik DAO, read-only against `ref-finance.sputnik-dao.near`: `get_policy`, `get_last_proposal_id`, `get_proposals`, `get_proposal`; a council member gets a correct `add_proposal` card, an outsider and a closed proposal are refused. Argument shapes follow the Sputnik v2 interface and the proposals visible on that DAO; policy-engine, vote-state and permission logic is covered against a fake RPC.
+- The web UI (checked in Chrome, no console errors) loads previewing `near`, renders blocked cards with a disabled sign button, the Cross-chain tab with live addresses, and the Activity tab with the safety report and JSON export. Clean clone + `npm start` and `docker compose up --build` were both run and answered `/api/health` and `/api/chat`.
+- Policy edge cases (rolling window, batches, allowlists, hard rules, decimals, wNEAR counted as NEAR, storage-deposit abuse, DAO rules, derivation-path and daily-cap rules) are covered by tests.
 
 Not verified:
 
-- **No transaction was signed or broadcast by this project**, so the wallet path (`@hot-labs/near-connect` loaded from jsDelivr, `signAndSendTransactions`, `/api/settle`) follows the library's documented API but was not exercised end to end here. That includes every Sputnik write: the `add_proposal` / `act_proposal` calls were built and pre-checked, never submitted, so gas amounts (100 / 150 Tgas) and the `Finalize` action (taken from the contract's action list, not observed in a live call) are untested on chain.
-- Sputnik permissions of token-weighted roles (`Member` kind) cannot be decided from the policy; the app says so and refuses rather than guessing. Only factory-created DAOs (`*.sputnik-dao.near`) are allowed by default.
+- **No transaction was signed or broadcast by this project**, so the wallet path (`@hot-labs/near-connect` loaded from jsDelivr, `signAndSendTransactions`, `/api/settle`) follows the library's documented API but was not exercised end to end here. For Chain Signatures that means **no `sign` call was ever submitted**: the 24 Tgas gas figure (15 call requirement + 7 + 2 callback reserves, all read from the live config) is derived from the contract source, not observed on chain, and the signature the MPC network would return is never fetched or used. Building the other-chain transaction whose hash is signed (EVM RLP, Bitcoin sighash) and broadcasting it is out of scope; Sentinel takes a 32-byte hash.
+- Only secp256k1 `Sign` domains are supported (domain 0 on the live contract). Ed25519 (domain 1) addresses for NEAR/Solana-style chains are not derived. The Bitcoin address shown is mainnet bech32/legacy; testnet and Taproot are not covered.
+- Every Sputnik write: `add_proposal` / `act_proposal` were built and pre-checked, never submitted, so gas amounts (100 / 150 Tgas) and the `Finalize` action are untested on chain. Token-weighted (`Member` kind) DAO roles are refused rather than guessed.
 - Function-call key create/revoke are built and pre-checked, not submitted. `checkKeyAllows` mirrors NEAR's documented runtime rules, not a live key.
-- Burrow supply, Meta Pool and LiNEAR unstake/withdraw, NFT transfer and the Social `set` call shapes were not executed. A deposit-address payment through NEAR Intents was not completed (needs real funds), so `intents_status` was not run on a settled swap.
-- The LLM loop was never run against a live provider (no key). It follows the standard chat-completions tool protocol; providers other than OpenAI are untested.
-- Public NEAR RPCs rate-limit. The client now retries with backoff across three endpoints and shares identical in-flight reads, but a busy judge machine may still see "RPC unavailable"; set `NEAR_RPC_URL`.
+- Burrow supply, Meta Pool and LiNEAR unstake/withdraw, NFT transfer and the Social `set` call shapes were not executed. A deposit-address payment through NEAR Intents was not completed (needs real funds).
+- **The LLM loop was never run against a live provider** (no key), including NEAR AI Cloud. The offline test drives it against a fake endpoint and checks URL, bearer header, model and tool set. The default model name comes from NEAR AI's quickstart page; whether a given model supports tool calling must be checked on their Models page.
+- Public NEAR RPCs rate-limit. The client retries with backoff across three endpoints and shares identical in-flight reads, but a busy machine may still see "RPC unavailable"; set `NEAR_RPC_URL`.
 
 ## Not done / honest limits
 
 - Mainnet only. No testnet switch.
 - Sputnik: no bounties, no policy-change / upgrade proposals (deliberately human-only), no staking-weighted vote evaluation.
 - Prices and slippage come from third parties (Ref router, NEAR Intents); the app shows minimums but cannot guarantee execution.
-- No TEE attestation, no Chain Signatures, no autonomous signing loop: the function-call key is created and *checked*, but this repo does not run an agent process that signs with it (by design for this submission: "never sign").
+- No TEE attestation and no autonomous signing loop: the function-call key is created and *checked*, and Chain Signature requests are built, but this repo does not run an agent process that signs or broadcasts (by design for this submission: "never sign"). Chain Signatures are address derivation plus an unsigned request builder.
 - The server has no login and is meant to run locally; it binds to 127.0.0.1. Anyone who can reach it can edit the policy. Do not expose it.
 - Not audited.
 

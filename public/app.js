@@ -66,11 +66,11 @@ function say(who, text) { const m = h('div', { class: `msg ${who}` }, text); $('
 function renderCard(c) {
   const v = c.policy.verdict;
   const label = { allow: 'Within policy', confirm: 'Needs your confirmation', deny: 'Blocked' }[v];
-  const box = h('div', { class: 'card' },
+  const box = h('div', { class: `card is-${v}` },
     h('h4', {}, c.title.replaceAll('_', ' '), ' ', h('span', { class: `pill v-${v}` }, label)),
     c.explain.flat().length ? h('div', {}, h('div', { class: 'sec' }, 'What will happen'), h('ul', {}, c.explain.flat().map((l) => h('li', {}, l)))) : null,
     c.policy.findings.length ? h('div', {}, h('div', { class: 'sec' }, 'Policy'), h('ul', {}, c.policy.findings.map((f) => h('li', { class: `f-${f.level}` }, f.message)))) : null,
-    c.checks.length ? h('div', {}, h('div', { class: 'sec' }, 'Checked against the chain just now'), h('ul', {}, c.checks.map((l) => h('li', { class: 'chk' }, l)))) : null,
+    c.checks.length ? h('div', {}, h('div', { class: 'sec' }, 'Checked against the chain just now'), h('ul', { class: 'checks' }, c.checks.map((l) => h('li', { class: 'chk' }, l)))) : null,
     c.warnings.length ? h('div', {}, h('div', { class: 'sec' }, 'Notes'), h('ul', {}, c.warnings.map((l) => h('li', {}, l)))) : null,
     c.note ? h('div', { class: 'chk' }, c.note) : null,
   );
@@ -157,3 +157,13 @@ for (const ex of EXAMPLES) $('chips').append(h('button', { type: 'button', oncli
 api('/api/config').then((c) => { $('mode').textContent = c.mode === 'llm' ? `LLM: ${c.model}` : 'offline commands (no LLM key)'; });
 say('bot', 'I prepare NEAR transactions, check them against the live chain and your safety policy, and hand them to your wallet. I never hold a key. You are previewing the public account \"near\" (read-only): building, live checks and policy verdicts all work, only signing needs a wallet. Click a chip under this box, or connect your wallet.');
 setAccount('', false);
+
+// ---- theme toggle (persisted; falls back to the OS setting)
+{
+  const root = document.documentElement, btn = $('theme');
+  const dark = () => (root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+  try { const t = localStorage.getItem('sentinel-theme'); if (t === 'light' || t === 'dark') root.dataset.theme = t; } catch {}
+  const sync = () => { btn.setAttribute('aria-label', dark() ? 'Switch to light theme' : 'Switch to dark theme'); btn.textContent = dark() ? '\u2600' : '\u263E'; };
+  btn.onclick = () => { root.dataset.theme = dark() ? 'light' : 'dark'; try { localStorage.setItem('sentinel-theme', root.dataset.theme); } catch {} sync(); };
+  sync();
+}

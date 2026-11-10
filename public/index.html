@@ -4,14 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NEAR Sentinel</title>
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Sora:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header>
-  <div class="brand"><span class="logo">S</span><div><strong>NEAR Sentinel</strong><small>a guarded AI agent: it proposes, your policy checks, you sign</small></div></div>
+  <div class="brand"><span class="logo" aria-hidden="true">S</span><div><strong>NEAR Sentinel</strong><small>a guarded AI agent: it proposes, your policy checks, you sign</small></div></div>
   <div class="hdr-right">
     <span id="mode" class="badge"></span>
     <span id="acct" class="acct"></span>
+    <button id="theme" class="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">&#9680;</button>
     <button id="connect" class="primary">Connect NEAR wallet</button>
   </div>
 </header>
@@ -26,7 +31,7 @@
     <div class="preview-as">Previewing a public account (default <b>near</b>; try <b>refchef.near</b>, a council member of ref-finance.sputnik-dao.near). Any account: <input id="preview" placeholder="e.g. root.near" aria-label="Preview account"> <button id="usePreview">Use</button> <small>(read-only: signing needs a wallet)</small></div>
   </section>
   <aside>
-    <div class="tabs"><button data-tab="policy" class="on">Policy</button><button data-tab="activity">Activity</button><button data-tab="about">How it is safe</button></div>
+    <div class="tabs" role="tablist"><button data-tab="policy" class="on">Policy</button><button data-tab="activity">Activity</button><button data-tab="about">How it is safe</button></div>
     <div id="tab-policy" class="tab">
       <p class="hint">Only you can edit this. The AI agent can read it but has no tool to change it.</p>
       <label>NEAR per transaction (max)<input id="p-near-pertx"></label>

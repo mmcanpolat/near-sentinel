@@ -52,11 +52,15 @@ export const DEFAULT_POLICY = Object.freeze({
   unlistedToken: 'confirm',
   maxGasTgas: 300,
   agentKeys: { allowAnyMethod: false, maxAllowanceNear: '0.25' },
+  // NEAR Chain Signatures: the MPC signer contract(s), derivation paths the agent may use ("*" at the end is a prefix
+  // wildcard), domains, a daily cap on signature requests, and whether each request needs the user's tick.
+  chainSig: { enabled: true, contracts: ['v1.signer'], allowedPaths: ['ethereum-*', 'base-*', 'bitcoin-*'], allowedDomains: [0], maxPerDay: 5, confirmEach: true },
 });
+export const CHAINSIG_TOKEN = 'chainsig:sign'; // ledger token used to count settled signature requests
 
 export function mergePolicy(p) {
   const d = structuredClone(DEFAULT_POLICY);
-  return { ...d, ...(p ?? {}), recipients: { ...d.recipients, ...(p?.recipients ?? {}) }, agentKeys: { ...d.agentKeys, ...(p?.agentKeys ?? {}) } };
+  return { ...d, ...(p ?? {}), recipients: { ...d.recipients, ...(p?.recipients ?? {}) }, agentKeys: { ...d.agentKeys, ...(p?.agentKeys ?? {}) }, chainSig: { ...d.chainSig, ...(p?.chainSig ?? {}) } };
 }
 
 /** Validates a policy object coming from the UI. Returns { ok, errors }. */
@@ -76,6 +80,11 @@ export function validatePolicy(p) {
     }
   }
   if (!/^\d+(\.\d+)?$/.test(String(p.agentKeys?.maxAllowanceNear ?? ''))) errors.push('agentKeys.maxAllowanceNear is not a number');
+  const cs = p.chainSig ?? {};
+  list(cs.contracts, 'chainSig.contracts'); list(cs.allowedPaths, 'chainSig.allowedPaths');
+  if (!Array.isArray(cs.allowedDomains) || cs.allowedDomains.some((x) => !Number.isInteger(x) || x < 0)) errors.push('chainSig.allowedDomains must be a list of domain numbers');
+  if (!(Number.isInteger(cs.maxPerDay) && cs.maxPerDay >= 0 && cs.maxPerDay <= 1000)) errors.push('chainSig.maxPerDay must be a whole number between 0 and 1000');
+  if (typeof cs.enabled !== 'boolean' || typeof cs.confirmEach !== 'boolean') errors.push('chainSig.enabled and chainSig.confirmEach must be true or false');
   return { ok: errors.length === 0, errors };
 }
 
@@ -111,6 +120,10 @@ export function evaluate(policy, txs, ctx = {}) {
   for (const e of effects.filter((x) => x.kind === 'call')) {
     if (policy.blockedContracts.includes(e.contract)) { add('deny', 'contract.blocked', `${e.contract} is on the blocked list.`); continue; }
     const standardFt = FT_STANDARD.has(e.method);
+    if ((policy.chainSig?.contracts ?? []).includes(e.contract)) {
+      if (e.method !== 'sign') add('deny', 'method.not_allowed', `Method ${e.method}() is not allowed on the signer ${e.contract}; an agent may only request signatures with sign().`);
+      continue;
+    }
     if (isDao(e.contract)) {
       if (!DAO_METHODS.includes(e.method)) add('deny', 'method.not_allowed', `Method ${e.method}() is not allowed on DAO ${e.contract} (allowed: ${DAO_METHODS.join(', ')}).`);
       continue;
@@ -184,6 +197,25 @@ export function evaluate(policy, txs, ctx = {}) {
       if (!ACT_ACTIONS.has(e.args?.action)) add('deny', 'dao.action_not_allowed', `act_proposal action "${e.args?.action}" is not allowed.`);
       if (e.deposit > 1n) add('deny', 'dao.unexpected_deposit', 'Voting never needs an attached deposit.');
     }
+  }
+
+  // ---- 4c. Chain Signatures --------------------------------------------------------------
+  const cs = policy.chainSig ?? {};
+  const signs = effects.filter((x) => x.kind === 'sign_request' && (cs.contracts ?? []).includes(x.contract));
+  for (const e of effects.filter((x) => x.kind === 'sign_request' && !(cs.contracts ?? []).includes(x.contract))) add('deny', 'chainsig.unknown_signer', `${e.contract}.sign() is not a signer contract on your list (${(cs.contracts ?? []).join(', ') || 'none'}).`);
+  if (signs.length) {
+    const pathOk = (path) => (cs.allowedPaths ?? []).some((pat) => (pat.endsWith('*') ? path.startsWith(pat.slice(0, -1)) : path === pat));
+    const usedSigns = (ctx.ledger ?? []).filter((r) => r.token === CHAINSIG_TOKEN && now - r.ts < DAY_MS).reduce((n, r) => n + Number(r.amount), 0);
+    if (!cs.enabled) add('deny', 'chainsig.disabled', 'Chain Signatures requests are switched off in your policy.');
+    if (usedSigns + signs.length > (cs.maxPerDay ?? 0)) add('deny', 'chainsig.daily_limit', `${signs.length} signature request(s) plus ${usedSigns} already made in the last 24h exceeds your cap of ${cs.maxPerDay ?? 0} per day.`);
+    for (const e of signs) {
+      if (!pathOk(e.path)) add('deny', 'chainsig.path_not_allowed', `Derivation path "${e.path}" is not on your allowed list (${(cs.allowedPaths ?? []).join(', ') || 'empty'}); each path is a different key and address on another chain.`);
+      if (!(cs.allowedDomains ?? []).includes(e.domainId)) add('deny', 'chainsig.domain_not_allowed', `MPC domain ${e.domainId} is not on your allowed list (${(cs.allowedDomains ?? []).join(', ') || 'empty'}).`);
+      if (e.payloadType !== 'Ecdsa' || !/^[0-9a-f]{64}$/.test(e.payload)) add('deny', 'chainsig.bad_payload', 'Only a 32-byte ECDSA payload hash (64 lowercase hex characters) is accepted.');
+      if (e.extraKeys.length) add('deny', 'chainsig.bad_request', `Unexpected fields in the sign request: ${e.extraKeys.join(', ')}.`);
+      if (e.deposit !== 1n) add('deny', 'chainsig.deposit', 'A signature request costs exactly 1 yoctoNEAR; any other deposit is refused.');
+    }
+    if (cs.confirmEach) add('confirm', 'chainsig.confirm', 'This asks the NEAR MPC network to sign a hash that can authorise a transfer on another chain. Confirm that you checked the transaction behind the hash.');
   }
 
   // ---- 5. Gas ----------------------------------------------------------------------------

@@ -32,6 +32,11 @@ export function analyze(txs) {
           const args = typeof p.args === 'object' && p.args ? p.args : {};
           const deposit = big(p.deposit);
           effects.push({ kind: 'call', contract: t.receiverId, method: p.methodName, gas: big(p.gas), deposit, args });
+          if (p.methodName === 'sign' && args.request && typeof args.request === 'object') {
+            // NEAR Chain Signatures request: the MPC network will sign a payload for a key derived from (this account, path).
+            const r = args.request, pk = r.payload_v2 && typeof r.payload_v2 === 'object' ? Object.keys(r.payload_v2) : [];
+            effects.push({ kind: 'sign_request', contract: t.receiverId, path: String(r.path ?? ''), domainId: r.domain_id, payloadType: pk.length === 1 ? pk[0] : 'invalid', payload: pk.length === 1 ? String(r.payload_v2[pk[0]]) : '', extraKeys: Object.keys(r).filter((k) => !['path', 'payload_v2', 'domain_id'].includes(k)), deposit });
+          }
           if (FT_OUT.has(p.methodName)) {
             effects.push({ kind: 'ft_out', token: t.receiverId, to: String(args.receiver_id ?? ''), amount: big(args.amount), viaCall: p.methodName === 'ft_transfer_call', msg: args.msg });
           } else if (deposit > 1n) {

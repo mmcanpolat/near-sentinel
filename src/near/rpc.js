@@ -8,6 +8,7 @@ export class NearError extends Error {
 }
 
 const cache = new Map(); // identical reads within 4s share one answer (keeps us under public rate limits)
+export const clearRpcCache = () => cache.clear(); // tests swap the chain under the cache
 const inflight = new Map(); // the same read asked twice at once shares one request
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 const TRANSIENT = /rate limit|too many|timeout|temporar|unavailable|overload/i;

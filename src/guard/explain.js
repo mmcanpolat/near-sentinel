@@ -36,7 +36,8 @@ export function explainTx(t, meta = {}) {
     if (a.type === 'Transfer') lines.push(`Send ${yoctoToNear(p.deposit)} NEAR to ${t.receiverId}`);
     else if (a.type === 'FunctionCall') {
       const args = typeof p.args === 'object' ? p.args : {};
-      if ((p.methodName === 'add_proposal' || p.methodName === 'act_proposal') && t.receiverId.endsWith('.sputnik-dao.near')) lines.push(explainDao(t.receiverId, p.methodName, args, BigInt(p.deposit ?? 0)));
+      if (p.methodName === 'sign' && args.request?.payload_v2) lines.push(`Ask the NEAR MPC network (${t.receiverId}) to sign the 32-byte hash 0x${Object.values(args.request.payload_v2)[0]} with the key derived for your account and path "${args.request.path}" (domain ${args.request.domain_id}). That signature can authorise a transaction on another chain. Cost: 1 yoctoNEAR plus gas.`);
+      else if ((p.methodName === 'add_proposal' || p.methodName === 'act_proposal') && t.receiverId.endsWith('.sputnik-dao.near')) lines.push(explainDao(t.receiverId, p.methodName, args, BigInt(p.deposit ?? 0)));
       else if (p.methodName === 'ft_transfer') {
         const d = meta.decimals?.[t.receiverId] ?? 0, s = meta.symbols?.[t.receiverId] ?? t.receiverId;
         lines.push(`Send ${formatUnits(args.amount, d)} ${s} to ${args.receiver_id}`);

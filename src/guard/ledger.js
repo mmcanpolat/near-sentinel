@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { txStatus } from '../near/rpc.js';
 import { analyze } from './analyze.js';
-import { canon } from './policy.js';
+import { canon, CHAINSIG_TOKEN } from './policy.js';
 
 const file = () => path.resolve(process.env.SENTINEL_DATA_DIR ?? 'data', 'ledger.json');
 
@@ -49,6 +49,7 @@ export async function settle(account, hash, t) {
   const rows = [];
   for (const e of analyze([t])) {
     if (e.kind === 'native_out' && e.amount > 0n) rows.push({ ts: Date.now(), token: 'near', amount: e.amount.toString(), to: e.to, hash });
+    if (e.kind === 'sign_request') rows.push({ ts: Date.now(), token: CHAINSIG_TOKEN, amount: '1', to: e.path, hash });
     if (e.kind === 'ft_out' && e.amount > 0n) rows.push({ ts: Date.now(), token: canon(e.token), amount: e.amount.toString(), to: e.to, hash });
   }
   record(account, rows);

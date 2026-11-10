@@ -41,7 +41,7 @@ test('behaviour check: running EVERY tool leaves the policy untouched, only issu
   globalThis.fetch = async (u, init) => { if (!String(u).includes('rpc')) { urls.push(String(u)); throw new Error('offline test: external call blocked'); } return inner(u, init); };
   const before = fs.existsSync(path.join(DATA, 'policy.json'));
   const args = {
-    send_near: { to: 'root.near', amount: '0.5' }, chainsig_request_signature: { path: 'ethereum-1', payloadHex: 'ab'.repeat(32) }, chainsig_addresses: { path: 'ethereum-1' },
+    send_near: { to: 'root.near', amount: '0.5' }, chainsig_prepare_request: { path: 'ethereum-1', payloadHex: 'ab'.repeat(32) }, chainsig_addresses: { path: 'ethereum-1' },
     agent_key_create: { contract: 'wrap.near', methods: ['near_deposit'], allowanceNear: '0.05' }, agent_key_revoke: { publicKey: 'ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp' },
     dao_propose: { dao: 'x.sputnik-dao.near', type: 'poll', description: 'q' }, dao_vote: { dao: 'x.sputnik-dao.near', id: 1, action: 'approve' },
   };
@@ -77,7 +77,7 @@ test('the LLM loop talks to NEAR AI Cloud, offers only the read-only tool set, a
     const body = JSON.parse(init.body);
     seen.push({ u: String(u), auth: init.headers.authorization, body });
     const msg = step++ === 0
-      ? { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'chainsig_request_signature', arguments: JSON.stringify({ path: 'ethereum-1', payloadHex: 'cd'.repeat(32) }) } }] }
+      ? { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'chainsig_prepare_request', arguments: JSON.stringify({ path: 'ethereum-1', payloadHex: 'cd'.repeat(32) }) } }] }
       : { role: 'assistant', content: 'Prepared; please confirm in your wallet.' };
     return new Response(JSON.stringify({ choices: [{ message: msg }] }));
   };

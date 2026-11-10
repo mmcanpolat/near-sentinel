@@ -146,7 +146,7 @@ test('a full card goes through the same pipeline: confirm, signable, explained, 
   const fc = installFakeChain();
   try {
     const b = await cs.buildChainSigRequest({ account: 'alice.near', path: 'ethereum-1', payloadHex: PAYLOAD });
-    const card = await makeCard('alice.near', b, { tool: 'chainsig_request_signature' });
+    const card = await makeCard('alice.near', b, { tool: 'chainsig_prepare_request' });
     assert.equal(card.policy.verdict, 'confirm');
     assert.ok(card.policy.findings.some((f) => f.rule === 'chainsig.confirm'));
     assert.equal(card.canSign, true);

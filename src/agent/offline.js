@@ -11,7 +11,7 @@ const KEY = '(ed25519:[1-9A-HJ-NP-Za-km-z]{43,44})';
 const DAO = '([a-z0-9._-]+\\.sputnik-dao\\.near)';
 const rules = [
   // NEAR Chain Signatures (matched first: "sign" and "addresses" are generic words)
-  [/\bsign\b.*?\b(?:payload|hash)\s+(?:0x)?([0-9a-fA-F]{64})\b(?:.*?\bpath\s+([\w.:/#-]+))?(?:.*?\bdomain\s+(\d+))?/i, (m) => ['chainsig_request_signature', { payloadHex: m[1], path: m[2] ?? 'ethereum-1', ...(m[3] != null ? { domainId: Number(m[3]) } : {}) }]],
+  [/\bsign\b.*?\b(?:payload|hash)\s+(?:0x)?([0-9a-fA-F]{64})\b(?:.*?\bpath\s+([\w.:/#-]+))?(?:.*?\bdomain\s+(\d+))?/i, (m) => ['chainsig_prepare_request', { payloadHex: m[1], path: m[2] ?? 'ethereum-1', ...(m[3] != null ? { domainId: Number(m[3]) } : {}) }]],
   [/\b(?:chain signatures?|mpc)\b.*\b(?:config|status|domains?)\b|\b(?:config|status|domains?)\b.*\b(?:chain signatures?|mpc)\b/i, () => ['chainsig_config', {}]],
   [/^\s*(?:show|derive|get|list|what(?:'s| is| are)|my)\b.*\b(?:addresses|address)\b(?:.*?\b(?:path|for)\s+((?:ethereum|base|bitcoin|[a-z]+)-[\w.:/#-]+))?\s*$/i, (m) => ['chainsig_addresses', { path: m[1] ?? 'ethereum-1' }]],
   // Sputnik DAO (matched first: proposal text may contain words that other rules key on)

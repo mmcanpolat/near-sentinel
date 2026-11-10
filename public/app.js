@@ -39,7 +39,7 @@ function setAccount(a, wallet) {
   account = a; walletAccount = wallet ? a : '';
   $('acct').textContent = a ? (wallet ? a : `${a} (preview)`) : '';
   $('connect').textContent = wallet ? 'Disconnect' : 'Connect NEAR wallet';
-  loadPolicy(); loadLedger();
+  loadPolicy(); loadLedger(); loadAudit(); $('cs-out').replaceChildren();
 }
 
 async function getConnector() {
@@ -110,8 +110,9 @@ $('form').onsubmit = async (ev) => {
   try {
     const r = await api('/api/chat', { method: 'POST', body: { messages: history, account } });
     wait.textContent = r.reply || 'Done.'; history.push({ role: 'assistant', content: r.reply || '' });
-    r.cards.forEach(renderCard);
+    r.cards.forEach(renderCard); loadAudit();
     if (/RPC unavailable|rate-limit/i.test(r.reply || '')) wait.append(' ', retryButton(text));
+    loadAudit();
   } catch (e) { wait.textContent = e.message; wait.classList.add('err'); if (e.retryable) wait.append(' ', retryButton(text)); }
   $('send').disabled = false; $('input').focus();
 };
@@ -129,6 +130,7 @@ async function loadPolicy() {
   $('p-unlisted').value = p.unlistedToken; $('p-rmode').value = p.recipients.mode; $('p-rlist').value = p.recipients.list.join('\n');
   $('p-contracts').value = p.allowedContracts.join('\n'); $('p-gas').value = p.maxGasTgas; $('p-keymax').value = p.agentKeys.maxAllowanceNear;
   const extra = { ...p.limits }; delete extra.near; $('p-extra').value = Object.keys(extra).length ? JSON.stringify(extra) : '';
+  const cs = p.chainSig; $('p-cs-enabled').checked = cs.enabled; $('p-cs-paths').value = cs.allowedPaths.join('\n'); $('p-cs-max').value = cs.maxPerDay; $('p-cs-confirm').checked = cs.confirmEach;
   window.__policy = p;
 }
 $('save').onclick = async () => {
@@ -137,6 +139,7 @@ $('save').onclick = async () => {
     p.limits = { ...(JSON.parse($('p-extra').value || '{}')), near: { perTx: $('p-near-pertx').value, daily: $('p-near-daily').value, confirmAbove: $('p-near-confirm').value } };
     p.unlistedToken = $('p-unlisted').value; p.recipients = { mode: $('p-rmode').value, list: lines($('p-rlist').value) };
     p.allowedContracts = lines($('p-contracts').value); p.maxGasTgas = Number($('p-gas').value); p.agentKeys.maxAllowanceNear = $('p-keymax').value;
+    p.chainSig = { ...p.chainSig, enabled: $('p-cs-enabled').checked, allowedPaths: lines($('p-cs-paths').value), maxPerDay: Number($('p-cs-max').value), confirmEach: $('p-cs-confirm').checked };
     await api(`/api/policy?account=${encodeURIComponent(account)}`, { method: 'PUT', body: p });
     $('saved').textContent = 'Saved.'; loadPolicy();
   } catch (e) { $('saved').textContent = e.message; }
@@ -146,11 +149,42 @@ async function loadLedger() {
   if (!account) return;
   let rows;
   try { rows = await api(`/api/ledger?account=${encodeURIComponent(account)}`); } catch (e) { $('ledger').textContent = e.message; return; }
-  $('ledger').replaceChildren(rows.length ? h('ul', {}, rows.map((r) => h('li', {}, `${new Date(r.ts).toLocaleTimeString()}: ${r.amount} raw units of ${r.token} to ${r.to}`))) : h('span', { class: 'hint' }, 'Nothing confirmed in the last 24h.'));
+  $('ledger').replaceChildren(rows.length ? h('ul', {}, rows.map((r) => h('li', {}, r.token === 'chainsig:sign' ? `${new Date(r.ts).toLocaleTimeString()}: signature request for path ${r.to}` : `${new Date(r.ts).toLocaleTimeString()}: ${r.amount} raw units of ${r.token} to ${r.to}`))) : h('span', { class: 'hint' }, 'Nothing confirmed in the last 24h.'));
 }
+// ---- agent safety report
+const VLABEL = { allow: 'Allowed', confirm: 'Confirm', deny: 'Blocked', refused: 'Refused' };
+async function loadAudit() {
+  if (!account) return;
+  $('audit-dl').href = `/api/audit?account=${encodeURIComponent(account)}&download=1`;
+  let r;
+  try { r = await api(`/api/audit?account=${encodeURIComponent(account)}`); } catch (e) { $('audit').textContent = e.message; return; }
+  const t = r.totals;
+  $('audit-sum').textContent = `${t.proposed} proposed: ${t.allowed} allowed, ${t.needConfirmation} confirm, ${t.blocked} blocked, ${t.refused} refused; chain ${r.hashChain.ok ? 'intact' : 'BROKEN'}`;
+  $('audit').replaceChildren(...(r.entries.length ? r.entries.slice().reverse().slice(0, 50).map((e) => h('details', { class: `audit-row is-${e.verdict}` },
+    h('summary', {}, h('span', { class: `pill v-${e.verdict === 'refused' ? 'deny' : e.verdict}` }, VLABEL[e.verdict]), ' ', e.title, ' ', h('small', {}, new Date(e.ts).toLocaleTimeString())),
+    h('p', {}, e.reason),
+    e.summary.length ? h('ul', {}, e.summary.map((l) => h('li', {}, l))) : null,
+    e.rules.length ? h('ul', {}, e.rules.map((f) => h('li', { class: `f-${f.level}` }, `${f.rule}: ${f.message}`))) : null,
+    e.checks.length ? h('ul', { class: 'checks' }, e.checks.map((l) => h('li', { class: 'chk' }, l))) : null,
+    h('small', { class: 'hint' }, `#${e.seq} tool ${e.tool ?? '-'} | tx ${e.txDigest ? e.txDigest.slice(0, 12) : '-'} | hash ${e.hash.slice(0, 12)}`, e.outcome ? ` | ${e.outcome.settled ? 'confirmed on chain' : 'not settled: ' + e.outcome.reason}` : ''),
+  )) : [h('span', { class: 'hint' }, 'Nothing proposed yet.')]));
+}
+$('audit-refresh').onclick = loadAudit;
+
+// ---- cross-chain addresses (NEAR Chain Signatures)
+$('cs-go').onclick = async () => {
+  $('cs-out').textContent = 'Reading the MPC contract...';
+  try {
+    const r = await api(`/api/chainsig?account=${encodeURIComponent(account)}&path=${encodeURIComponent($('cs-path').value.trim())}`);
+    const row = (k, v) => h('div', { class: 'cs-row' }, h('b', {}, k), h('code', {}, v));
+    $('cs-out').replaceChildren(row('EVM (Ethereum, Base, ...)', r.addresses.evm), row('Bitcoin (native segwit)', r.addresses.bitcoin), row('Bitcoin (legacy)', r.addresses.bitcoinLegacy), row('Public key', r.derivedPublicKey),
+      h('p', { class: r.localDerivationMatchesContract ? 'chk' : 'err' }, `${r.localDerivationMatchesContract ? 'Local math matches the contract view. ' : ''}${r.note} Contract ${r.contract} v${r.contractVersion}, domain ${r.domainId}.`));
+  } catch (e) { $('cs-out').textContent = e.message; }
+};
 document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
-  for (const t of ['policy', 'activity', 'about']) $(`tab-${t}`).hidden = t !== b.dataset.tab;
+  if (b.dataset.tab === 'activity') loadAudit();
+  for (const t of ['policy', 'chains', 'activity', 'about']) $(`tab-${t}`).hidden = t !== b.dataset.tab;
 }));
 
 for (const ex of EXAMPLES) $('chips').append(h('button', { type: 'button', onclick: () => { $('input').value = ex; $('input').focus(); } }, ex));

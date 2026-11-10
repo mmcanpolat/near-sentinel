@@ -31,7 +31,7 @@
     <div class="preview-as">Previewing a public account (default <b>near</b>; try <b>refchef.near</b>, a council member of ref-finance.sputnik-dao.near). Any account: <input id="preview" placeholder="e.g. root.near" aria-label="Preview account"> <button id="usePreview">Use</button> <small>(read-only: signing needs a wallet)</small></div>
   </section>
   <aside>
-    <div class="tabs" role="tablist"><button data-tab="policy" class="on">Policy</button><button data-tab="activity">Activity</button><button data-tab="about">How it is safe</button></div>
+    <div class="tabs" role="tablist"><button data-tab="policy" class="on">Policy</button><button data-tab="chains">Cross-chain</button><button data-tab="activity">Activity</button><button data-tab="about">How it is safe</button></div>
     <div id="tab-policy" class="tab">
       <p class="hint">Only you can edit this. The AI agent can read it but has no tool to change it.</p>
       <label>NEAR per transaction (max)<input id="p-near-pertx"></label>
@@ -43,10 +43,29 @@
       <label>Allowed contracts (one per line)<textarea id="p-contracts" rows="5"></textarea></label>
       <label>Max gas per transaction (Tgas)<input id="p-gas"></label>
       <label>Max gas allowance of an agent key (NEAR)<input id="p-keymax"></label>
+      <fieldset class="cs"><legend>Chain Signatures (acting on other chains)</legend>
+        <label class="inline"><input type="checkbox" id="p-cs-enabled"> allow signature requests</label>
+        <label>Allowed derivation paths (one per line, * at the end = prefix)<textarea id="p-cs-paths" rows="3"></textarea></label>
+        <label>Max signature requests per 24h<input id="p-cs-max"></label>
+        <label class="inline"><input type="checkbox" id="p-cs-confirm"> always ask me to confirm</label>
+      </fieldset>
       <label>Extra token limits (JSON, e.g. {"usdc.tkn.near":{"perTx":"50","daily":"100"}})<textarea id="p-extra" rows="2"></textarea></label>
       <button id="save" class="primary">Save policy</button> <span id="saved"></span>
     </div>
-    <div id="tab-activity" class="tab" hidden><p class="hint">Spending counted against your daily limits. A row is written only after the chain confirms the transaction succeeded.</p><div id="ledger">Connect or preview an account.</div></div>
+    <div id="tab-chains" class="tab" hidden>
+      <p class="hint">Your NEAR account also controls addresses on other chains through NEAR Chain Signatures (MPC). Sentinel computes them from public keys: no key is stored here, and spending needs a <code>sign</code> call that your wallet approves.</p>
+      <label>Derivation path<input id="cs-path" value="ethereum-1"></label>
+      <button id="cs-go" type="button">Show addresses</button>
+      <div id="cs-out" class="cs-out"></div>
+    </div>
+    <div id="tab-activity" class="tab" hidden>
+      <h4 class="sec">Agent safety report</h4>
+      <p class="hint">Every action the agent proposed, with the verdict, the checks that ran and the reason. Hash-chained; export it as JSON.</p>
+      <div class="audit-bar"><a id="audit-dl" class="btnlink" href="#" download>Download JSON</a> <button id="audit-refresh" type="button">Refresh</button> <span id="audit-sum" class="hint"></span></div>
+      <div id="audit">Nothing proposed yet.</div>
+      <h4 class="sec">Confirmed spending</h4>
+      <p class="hint">Counted against your daily limits. A row is written only after the chain confirms the transaction succeeded.</p><div id="ledger">Connect or preview an account.</div>
+    </div>
     <div id="tab-about" class="tab" hidden>
       <ul>
         <li>The agent holds no key. It cannot sign. Every transaction is an unsigned card.</li>

@@ -11,6 +11,7 @@ import { explainTx } from './explain.js';
 import { analyze } from './analyze.js';
 import { entries } from './ledger.js';
 import { ftInfo } from '../near/tokens.js';
+import { recordProposal } from './audit.js';
 
 const policyFile = () => path.resolve(process.env.SENTINEL_DATA_DIR ?? 'data', 'policy.json');
 const loadAll = () => { try { return JSON.parse(fs.readFileSync(policyFile(), 'utf8')); } catch { return {}; } };
@@ -30,7 +31,7 @@ export function setPolicy(account, p) {
 /** Cards waiting for the user (in memory, newest 200). The ledger only trusts what the chain confirms. */
 export const cards = new Map();
 
-export async function makeCard(account, built, { title } = {}) {
+export async function makeCard(account, built, { title, tool } = {}) {
   const txs = built.transactions ?? [];
   const policy = getPolicy(account);
   const decimals = { ...(built.decimals ?? {}) }, symbols = { ...(built.symbols ?? {}) };
@@ -61,6 +62,7 @@ export async function makeCard(account, built, { title } = {}) {
     needsConfirm: level === 'confirm',
     createdAt: Date.now(),
   };
+  try { recordProposal(card, { tool }); } catch (e) { console.error('audit log not written:', e.message); }
   cards.set(id, card);
   if (cards.size > 200) cards.delete(cards.keys().next().value);
   return card;

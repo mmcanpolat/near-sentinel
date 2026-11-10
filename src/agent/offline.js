@@ -10,6 +10,10 @@ const KEY = '(ed25519:[1-9A-HJ-NP-Za-km-z]{43,44})';
 
 const DAO = '([a-z0-9._-]+\\.sputnik-dao\\.near)';
 const rules = [
+  // NEAR Chain Signatures (matched first: "sign" and "addresses" are generic words)
+  [/\bsign\b.*?\b(?:payload|hash)\s+(?:0x)?([0-9a-fA-F]{64})\b(?:.*?\bpath\s+([\w.:/#-]+))?(?:.*?\bdomain\s+(\d+))?/i, (m) => ['chainsig_request_signature', { payloadHex: m[1], path: m[2] ?? 'ethereum-1', ...(m[3] != null ? { domainId: Number(m[3]) } : {}) }]],
+  [/\b(?:chain signatures?|mpc)\b.*\b(?:config|status|domains?)\b|\b(?:config|status|domains?)\b.*\b(?:chain signatures?|mpc)\b/i, () => ['chainsig_config', {}]],
+  [/^\s*(?:show|derive|get|list|what(?:'s| is| are)|my)\b.*\b(?:addresses|address)\b(?:.*?\b(?:path|for)\s+((?:ethereum|base|bitcoin|[a-z]+)-[\w.:/#-]+))?\s*$/i, (m) => ['chainsig_addresses', { path: m[1] ?? 'ethereum-1' }]],
   // Sputnik DAO (matched first: proposal text may contain words that other rules key on)
   [new RegExp(`\\bpropose\\b.*?\\bpoll\\b\\s+["“]?(.+?)["”]?\\s+(?:on|in|at)\\s+${DAO}\\s*$`, 'i'), (m) => ['dao_propose', { dao: m[2], type: 'poll', description: m[1] }]],
   [new RegExp(`\\bpropose\\b.*?\\btransfer\\s+([\\d.]+)\\s*(\\w+)\\s+to\\s+([^\\s]+)\\s+(?:on|in|from|at)\\s+${DAO}(?:\\s+(?:for|because|desc(?:ription)?:?)\\s+["“]?(.+?)["”]?)?\\s*$`, 'i'), (m) => ['dao_propose', { dao: m[4], type: 'transfer', amount: m[1], token: m[2], receiver: m[3], description: m[5] ?? `Transfer ${m[1]} ${m[2]} to ${m[3]}` }]],
@@ -45,7 +49,7 @@ const rules = [
   [/\bsend\s+([\d.]+)\s*(\w+)\s+to\s+([^\s]+)/i, (m) => ['send_token', { amount: m[1], token: m[2], to: m[3] }]],
 ];
 
-export const HELP = `I am running without an LLM key, so I only understand these phrasings (add LLM_API_KEY to .env for free-form chat):
+export const HELP = `I am running without an LLM key, so I only understand these phrasings (add LLM_API_KEY to .env for free-form chat; LLM_PROVIDER=near-ai uses NEAR AI Cloud):
 - balance | validators | chains | list keys | show policy
 - send 1 NEAR to alice.near | send 5 USDC to alice.near
 - wrap 2 NEAR | stake 3 NEAR with metapool | swap 1 NEAR to USDC
@@ -53,6 +57,7 @@ export const HELP = `I am running without an LLM key, so I only understand these
 - request 0.01 ETH on base refund 0x...   (optionally: ... as wNEAR)
 - create agent key for wrap.near methods near_deposit allowance 0.1
 - revoke key ed25519:...  |  post hello NEAR
+- Chain Signatures: derive addresses (for ethereum-1) | chain signatures config | sign payload 0x<64 hex> path ethereum-1
 - Sputnik DAO: dao ref-finance.sputnik-dao.near | proposals of ref-finance.sputnik-dao.near
   propose transfer 1 NEAR to alice.near on x.sputnik-dao.near for Grant | propose poll Ship it? on x.sputnik-dao.near
   propose add bob.near to role council on x.sputnik-dao.near | approve proposal 12 on x.sputnik-dao.near | finalize proposal 12 on x.sputnik-dao.near`;

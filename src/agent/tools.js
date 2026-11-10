@@ -9,6 +9,8 @@ import * as dao from '../near/sputnik.js';
 import { accessKey } from '../near/rpc.js';
 import { fnCall, tx } from '../near/actions.js';
 import { yoctoToNear } from '../lib/units.js';
+import { recordRefusal } from '../guard/audit.js';
+import { chainSigAddresses, chainSigConfig, buildChainSigRequest } from '../near/chainsig.js';
 
 const S = (description) => ({ type: 'string', description });
 const obj = (properties, required = []) => ({ type: 'object', properties, required });
@@ -37,7 +39,10 @@ export const TOOLS = [
     } },
   { name: 'dao_info', description: 'Sputnik DAO v2 overview: treasury balance, roles and who is in them, proposal bond, voting period.', parameters: obj({ dao: S('DAO account, e.g. ref-finance.sputnik-dao.near') }, ['dao']), read: true, run: ({ args }) => dao.sputnikInfo(args) },
   { name: 'dao_proposals', description: 'Newest proposals of a Sputnik DAO with status and vote tally. Optional status filter (InProgress, Approved, Rejected, Expired, Failed).', parameters: obj({ dao: S('DAO account'), status: S('optional status filter'), limit: { type: 'number' } }, ['dao']), read: true, run: ({ args }) => dao.sputnikProposals(args) },
+  { name: 'chainsig_config', description: 'Live facts of the NEAR Chain Signatures (MPC) contract: version, signing domains with their curve, and the gas the contract needs. Read-only.', parameters: obj({}), read: true, run: async () => { const c = await chainSigConfig(); delete c.config; return c; } },
+  { name: 'chainsig_addresses', description: 'The Ethereum/Base (EVM) and Bitcoin addresses that the connected NEAR account controls through NEAR Chain Signatures for a derivation path (for example ethereum-1). Computed from public keys by the MPC contract and re-verified locally; no key exists on this machine.', parameters: obj({ path: S('derivation path, default ethereum-1'), domainId: { type: 'number' } }), read: true, run: ({ account, args }) => chainSigAddresses({ account, path: args.path ?? 'ethereum-1', domainId: args.domainId }) },
   // ---- builds (return a card)
+  { name: 'chainsig_request_signature', description: 'Prepare (never send) a NEAR Chain Signatures request: ask the MPC network to sign a 32-byte payload hash with the key derived for the account and path, so the user can act on another chain. Goes through the same policy as every other action (allowed paths, daily cap, confirmation). The user approves in their wallet.', parameters: obj({ path: S('derivation path, e.g. ethereum-1'), payloadHex: S('32-byte hash to sign, 64 hex characters'), domainId: { type: 'number' } }, ['path', 'payloadHex']), build: ({ account, args }) => buildChainSigRequest({ account, ...args }) },
   { name: 'send_near', description: 'Prepare a native NEAR transfer.', parameters: obj({ to: S('NEAR account id'), amount: S('NEAR amount, e.g. "1.5"') }, ['to', 'amount']), build: ({ account, args }) => b.sendNear({ account, ...args }) },
   { name: 'send_token', description: 'Prepare a NEP-141 token transfer (registers the receiver when needed).', parameters: obj({ token: S('symbol or contract'), to: S('NEAR account id'), amount: S('human amount') }, ['token', 'to', 'amount']), build: ({ account, args }) => b.sendToken({ account, ...args }) },
   { name: 'wrap_near', description: 'Wrap NEAR into wNEAR, or unwrap.', parameters: obj({ amount: S('NEAR amount'), unwrap: { type: 'boolean' } }, ['amount']), build: ({ account, args }) => b.wrapNear({ account, ...args }) },
@@ -71,10 +76,11 @@ export async function runTool(name, args, account) {
   try {
     if (t.read) return { toModel: await t.run({ account, args: args ?? {} }) };
     const built = await t.build({ account, args: args ?? {} });
-    const card = await makeCard(account, built);
+    const card = await makeCard(account, built, { tool: name });
     return { toModel: cardForModel(card), card };
   } catch (e) {
     const msg = e.user || e.name === 'NearError' || /NEAR Intents|Ref |not a valid|more than \d+ decimal/i.test(e.message) ? e.message : `Could not complete that: ${String(e.message).slice(0, 160)}`;
+    if (!t.read) { try { recordRefusal(account, name, args, msg); } catch { /* the audit trail must never break the answer */ } }
     return { toModel: { error: msg }, error: msg };
   }
 }

@@ -4,11 +4,13 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chatWithTools, llmConfigured } from './agent/llm.js';
+import { chatWithTools, llmConfigured, llmSettings } from './agent/llm.js';
 import { chatOffline } from './agent/offline.js';
 import { cards, getPolicy, setPolicy } from './guard/pipeline.js';
 import { entries, settle } from './guard/ledger.js';
+import { report, auditEntries, recordOutcome } from './guard/audit.js';
 import { validAccountId } from './lib/units.js';
+import { chainSigAddresses } from './near/chainsig.js';
 
 const PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
@@ -31,7 +33,7 @@ export function createServer() {
         // Cross-site pages must not be able to drive the local API.
         if (req.method !== 'GET' && !(req.headers['content-type'] ?? '').startsWith('application/json')) return json(res, 415, { error: 'JSON only' });
         if (url.pathname === '/api/health') return json(res, 200, { ok: true });
-        if (url.pathname === '/api/config') return json(res, 200, { mode: llmConfigured() ? 'llm' : 'offline', model: llmConfigured() ? (process.env.LLM_MODEL ?? 'gpt-4o-mini') : null, network: 'mainnet' });
+        if (url.pathname === '/api/config') return json(res, 200, { mode: llmConfigured() ? 'llm' : 'offline', model: llmConfigured() ? llmSettings().model : null, provider: llmConfigured() ? llmSettings().label : null, network: 'mainnet' });
         if (url.pathname === '/api/chat' && req.method === 'POST') {
           const { messages = [], account } = await readBody(req);
           const a = acct(account);
@@ -47,12 +49,26 @@ export function createServer() {
           const a = acct(url.searchParams.get('account'));
           return json(res, 200, entries(a).filter((r) => Date.now() - r.ts < 864e5));
         }
+        if (url.pathname === '/api/chainsig') {
+          const d = url.searchParams.get('domain');
+          return json(res, 200, await chainSigAddresses({ account: acct(url.searchParams.get('account')), path: url.searchParams.get('path') || 'ethereum-1', domainId: d == null || d === '' ? undefined : Number(d) }));
+        }
+        if (url.pathname === '/api/audit') {
+          const a = acct(url.searchParams.get('account'));
+          if (url.searchParams.get('download') === '1') {
+            res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="sentinel-safety-report-${a || 'anonymous'}.json"` });
+            return res.end(JSON.stringify(report(a), null, 2));
+          }
+          return json(res, 200, report(a));
+        }
         if (url.pathname === '/api/settle' && req.method === 'POST') {
           const { cardId, txIndex, hash, account } = await readBody(req);
           const card = cards.get(cardId);
           if (!card || card.account !== acct(account)) return json(res, 404, { error: 'Unknown card.' });
           if (!/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(String(hash))) return json(res, 400, { error: 'Not a transaction hash.' });
-          return json(res, 200, await settle(card.account, hash, card.transactions[txIndex ?? 0]));
+          const result = await settle(card.account, hash, card.transactions[txIndex ?? 0]);
+          recordOutcome(card.account, cardId, { settled: result.settled, hash, reason: result.reason ?? null });
+          return json(res, 200, result);
         }
         return json(res, 404, { error: 'Not found' });
       }

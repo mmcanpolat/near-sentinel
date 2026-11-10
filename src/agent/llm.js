@@ -3,6 +3,17 @@
 
 import { toolSpecs, runTool } from './tools.js';
 
+// Providers. LLM_PROVIDER=near-ai selects NEAR AI Cloud (OpenAI-compatible, key from https://cloud.near.ai);
+// LLM_BASE_URL / LLM_MODEL always override the preset. A key is required for any LLM: without LLM_API_KEY the app stays offline.
+export const PROVIDERS = {
+  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', label: 'OpenAI' },
+  'near-ai': { baseUrl: 'https://cloud-api.near.ai/v1', model: 'zai-org/GLM-5.1-FP8', label: 'NEAR AI Cloud' },
+};
+export function llmSettings(env = process.env) {
+  const name = (env.LLM_PROVIDER || '').toLowerCase().replace(/[_\s]/g, '-');
+  const preset = PROVIDERS[name] ?? PROVIDERS.openai;
+  return { provider: PROVIDERS[name] ? name : 'openai', label: PROVIDERS[name] ? preset.label : env.LLM_BASE_URL ? 'custom OpenAI-compatible' : preset.label, baseUrl: (env.LLM_BASE_URL || preset.baseUrl).replace(/\/$/, ''), model: env.LLM_MODEL || preset.model };
+}
 export const llmConfigured = () => !!process.env.LLM_API_KEY;
 
 const SYSTEM = (account) => `You are Sentinel, a careful assistant for the NEAR blockchain. The user's connected NEAR account is ${account || '(none yet: ask them to connect a wallet before any account-specific action)'}.
@@ -17,8 +28,7 @@ How you work:
 - Be concise. No emojis.`;
 
 export async function chatWithTools(messages, account) {
-  const base = (process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
-  const model = process.env.LLM_MODEL ?? 'gpt-4o-mini';
+  const { baseUrl: base, model } = llmSettings();
   const convo = [{ role: 'system', content: SYSTEM(account) }, ...messages.slice(-20).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content ?? '').slice(0, 4000) }))];
   const cards = [];
   for (let step = 0; step < 6; step++) {
@@ -28,7 +38,7 @@ export async function chatWithTools(messages, account) {
       body: JSON.stringify({ model, messages: convo, tools: toolSpecs(), tool_choice: 'auto' }),
       signal: AbortSignal.timeout(60000),
     });
-    if (!r.ok) throw new Error(`The language model returned ${r.status}. Check LLM_API_KEY, LLM_BASE_URL and LLM_MODEL.`);
+    if (!r.ok) throw new Error(`The language model returned ${r.status}. Check LLM_API_KEY, LLM_PROVIDER, LLM_BASE_URL and LLM_MODEL (the model must support tool calling).`);
     const msg = (await r.json()).choices?.[0]?.message;
     if (!msg) throw new Error('The language model returned an empty answer.');
     convo.push(msg);

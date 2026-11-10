@@ -4,10 +4,13 @@
   "description": "A guarded AI agent for NEAR: policy engine, function-call-key sandbox, live pre-checks, NEAR Intents cross-chain. Never holds a full-access key, never signs.",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node src/start.js",
     "test": "node --test test/*.test.js",
-    "test:live": "LIVE=1 node --test test/*.test.js"
+    "test:live": "LIVE=1 node --test test/*.test.js",
+    "selftest": "node scripts/selftest.js"
   }
 }

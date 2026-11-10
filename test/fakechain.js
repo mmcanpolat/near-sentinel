@@ -47,6 +47,7 @@ export function installFakeChain({ extraViews = {}, accounts = {}, txOutcomes = 
       const a = all[params.account_id];
       return a ? reply(a) : new Response(JSON.stringify({ jsonrpc: '2.0', id: 'x', error: { message: 'x', cause: { name: 'UNKNOWN_ACCOUNT' }, data: `account ${params.account_id} does not exist while viewing` } }));
     }
+    if (params.request_type === 'view_access_key') return new Response(JSON.stringify({ jsonrpc: '2.0', id: 'x', error: { message: 'x', cause: { name: 'UNKNOWN_ACCESS_KEY' }, data: `access key ${params.public_key} does not exist while viewing` } }));
     if (params.request_type === 'call_function') {
       const f = views[`${params.account_id}.${params.method_name}`];
       if (!f) return reply({ error: 'method not found' });

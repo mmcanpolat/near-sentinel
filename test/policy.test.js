@@ -164,3 +164,12 @@ test('the default policy is not mutated by merging', () => {
   m.limits.near.perTx = '999';
   assert.equal(DEFAULT_POLICY.limits.near.perTx, '5');
 });
+
+test('the default policy lets a Ref swap through (wNEAR ft_transfer_call to the Ref router)', () => {
+  const txs = [
+    tx('wrap.near', [fnCall('near_deposit', {}, 30n * 10n ** 12n, NEAR(1))]),
+    tx('wrap.near', [fnCall('ft_transfer_call', { receiver_id: 'v2.ref-finance.near', amount: String(NEAR(1)), msg: '{}' }, 200n * 10n ** 12n, 1n)]),
+  ];
+  const r = evaluate(policy(), txs, ctx());
+  assert.ok(!levels(r).some((l) => l.startsWith('deny')), levels(r).join());
+});

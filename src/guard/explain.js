@@ -20,7 +20,7 @@ const KNOWN = {
 function explainDao(c, method, args, deposit) {
   if (method === 'add_proposal') {
     const k = args.proposal?.kind, n = typeof k === 'string' ? k : Object.keys(k ?? {})[0], b = k?.[n] ?? {};
-    const what = n === 'Transfer' ? `pay ${b.amount} ${b.token_id || 'yoctoNEAR'} to ${b.receiver_id}`
+    const what = n === 'Transfer' ? `pay ${b.token_id ? `${b.amount} raw units of ${b.token_id}` : `${yoctoToNear(BigInt(b.amount))} NEAR`} to ${b.receiver_id}`
       : n === 'Vote' ? 'poll the members' : n === 'AddMemberToRole' ? `add ${b.member_id} to role ${b.role}` : n === 'RemoveMemberFromRole' ? `remove ${b.member_id} from role ${b.role}`
       : n === 'FunctionCall' ? `call ${(b.actions ?? []).map((a) => a.method_name).join(', ')}() on ${b.receiver_id}` : `a ${n} change`;
     return `Propose to DAO ${c}: ${what} ("${String(args.proposal?.description ?? '').slice(0, 80)}"). Attaches the ${yoctoToNear(deposit)} NEAR proposal bond; nothing executes until members vote.`;

@@ -120,7 +120,9 @@ export function evaluate(policy, txs, ctx = {}) {
       continue;
     }
     const ms = policy.allowedMethods?.[e.contract];
-    if (ms && !ms.includes(e.method) && !(standardFt && !allowedC.has(e.contract))) {
+    // ft_transfer_call hands tokens to a receiver contract that acts on them: fine when that receiver is itself allowed (e.g. the Ref router).
+    const toAllowedReceiver = e.method === 'ft_transfer_call' && allowedC.has(String(e.args?.receiver_id ?? ''));
+    if (ms && !ms.includes(e.method) && !toAllowedReceiver && !(standardFt && !allowedC.has(e.contract))) {
       add('deny', 'method.not_allowed', `Method ${e.method}() is not allowed on ${e.contract} (allowed: ${ms.join(', ')}).`);
     }
   }

@@ -50,7 +50,7 @@ Trust boundaries: the LLM sees only tool results; the wallet is the only signer;
 | Track | Requirement | Where |
 |---|---|---|
 | AI Security & Defense | Spending limits | `policy.js` limits, daily rolling cap, ledger |
-| | Policy engines | `policy.js`, 31 unit tests in `test/policy.test.js` |
+| | Policy engines | `policy.js`, 25 unit tests in `test/policy.test.js` |
 | | Function-call keys / sandboxed wallets | `keys.js`, `agent_key_create/revoke/check` |
 | | Pre-sign checks, no blind signing | `precheck.js`, `explain.js`, cards |
 | Agent Economy | Agent earns and pays across chains | `intents_receive`, `intents_swap` |

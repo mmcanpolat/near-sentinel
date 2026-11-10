@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEAR Sentinel</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">S</span><div><strong>NEAR Sentinel</strong><small>a guarded AI agent: it proposes, your policy checks, you sign</small></div></div>
+  <div class="hdr-right">
+    <span id="mode" class="badge"></span>
+    <span id="acct" class="acct"></span>
+    <button id="connect" class="primary">Connect NEAR wallet</button>
+  </div>
+</header>
+<main>
+  <section class="chat">
+    <div id="log" aria-live="polite"></div>
+    <div class="chips" id="chips"></div>
+    <form id="form">
+      <input id="input" autocomplete="off" placeholder="Ask in plain words, e.g. send 0.1 NEAR to alice.near" aria-label="Message">
+      <button class="primary" type="submit" id="send">Send</button>
+    </form>
+    <div class="preview-as">No wallet? Preview as any public account: <input id="preview" placeholder="e.g. root.near" aria-label="Preview account"> <button id="usePreview">Use</button> <small>(read-only: signing needs a wallet)</small></div>
+  </section>
+  <aside>
+    <div class="tabs"><button data-tab="policy" class="on">Policy</button><button data-tab="activity">Activity</button><button data-tab="about">How it is safe</button></div>
+    <div id="tab-policy" class="tab">
+      <p class="hint">Only you can edit this. The AI agent can read it but has no tool to change it.</p>
+      <label>NEAR per transaction (max)<input id="p-near-pertx"></label>
+      <label>NEAR per 24h (max)<input id="p-near-daily"></label>
+      <label>Ask me to confirm above (NEAR)<input id="p-near-confirm"></label>
+      <label>Token with no limit<select id="p-unlisted"><option value="allow">allow</option><option value="confirm">ask me to confirm</option><option value="deny">deny</option></select></label>
+      <label>Recipients<select id="p-rmode"><option value="any">anyone</option><option value="allowlist">only the list below</option></select></label>
+      <label>Recipient allowlist (one per line)<textarea id="p-rlist" rows="2"></textarea></label>
+      <label>Allowed contracts (one per line)<textarea id="p-contracts" rows="5"></textarea></label>
+      <label>Max gas per transaction (Tgas)<input id="p-gas"></label>
+      <label>Max gas allowance of an agent key (NEAR)<input id="p-keymax"></label>
+      <label>Extra token limits (JSON, e.g. {"usdc.tkn.near":{"perTx":"50","daily":"100"}})<textarea id="p-extra" rows="2"></textarea></label>
+      <button id="save" class="primary">Save policy</button> <span id="saved"></span>
+    </div>
+    <div id="tab-activity" class="tab" hidden><p class="hint">Spending counted against your daily limits. A row is written only after the chain confirms the transaction succeeded.</p><div id="ledger">Connect or preview an account.</div></div>
+    <div id="tab-about" class="tab" hidden>
+      <ul>
+        <li>The agent holds no key. It cannot sign. Every transaction is an unsigned card.</li>
+        <li>Before a card appears it is read against live chain state and judged by your policy.</li>
+        <li>A blocked card cannot be signed. A "confirm" card needs your tick first.</li>
+        <li>For autonomous work, give the agent a function-call key: one contract, listed methods, a gas allowance, no deposits. Revoke it any time.</li>
+        <li>Nothing is counted as spent until the chain says it succeeded.</li>
+      </ul>
+    </div>
+  </aside>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

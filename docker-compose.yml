@@ -1,0 +1,13 @@
+services:
+  sentinel:
+    build: .
+    # Published on loopback only: this app has no login, so it must not be reachable from the network.
+    ports: ["127.0.0.1:3000:3000"]
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - sentinel-data:/app/data
+    restart: unless-stopped
+volumes:
+  sentinel-data:

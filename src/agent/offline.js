@@ -8,7 +8,15 @@ const CHAINS = 'eth|ethereum|base|arb|arbitrum|sol|solana|btc|bitcoin|op|optimis
 const ADDR = '(0x[0-9a-fA-F]{40}|[a-z0-9._-]+\\.(?:near|tg)|[0-9a-f]{64})';
 const KEY = '(ed25519:[1-9A-HJ-NP-Za-km-z]{43,44})';
 
+const DAO = '([a-z0-9._-]+\\.sputnik-dao\\.near)';
 const rules = [
+  // Sputnik DAO (matched first: proposal text may contain words that other rules key on)
+  [new RegExp(`\\bpropose\\b.*?\\bpoll\\b\\s+["“]?(.+?)["”]?\\s+(?:on|in|at)\\s+${DAO}\\s*$`, 'i'), (m) => ['dao_propose', { dao: m[2], type: 'poll', description: m[1] }]],
+  [new RegExp(`\\bpropose\\b.*?\\btransfer\\s+([\\d.]+)\\s*(\\w+)\\s+to\\s+([^\\s]+)\\s+(?:on|in|from|at)\\s+${DAO}(?:\\s+(?:for|because|desc(?:ription)?:?)\\s+["“]?(.+?)["”]?)?\\s*$`, 'i'), (m) => ['dao_propose', { dao: m[4], type: 'transfer', amount: m[1], token: m[2], receiver: m[3], description: m[5] ?? `Transfer ${m[1]} ${m[2]} to ${m[3]}` }]],
+  [new RegExp(`\\bpropose\\b.*?\\b(add|remove)\\s+([^\\s]+)\\s+(?:to|from)\\s+(?:role\\s+)?(\\w+)\\s+(?:on|in|at)\\s+${DAO}\\s*$`, 'i'), (m) => ['dao_propose', { dao: m[4], type: `${m[1].toLowerCase()}_member`, member: m[2], role: m[3], description: `${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]} ${m[1].toLowerCase() === 'add' ? 'to' : 'from'} ${m[3]}` }]],
+  [new RegExp(`\\b(?:vote\\s+)?(approve|reject|remove|finalize)\\b.*?\\bproposal\\s+#?(\\d+)\\s+(?:on|in|of|at)\\s+${DAO}`, 'i'), (m) => ['dao_vote', { dao: m[3], id: Number(m[2]), action: m[1] }]],
+  [new RegExp(`\\bproposals?\\b.*?\\b(?:of|on|in|for)\\s+${DAO}(?:\\s+(in progress|approved|rejected|expired|failed))?`, 'i'), (m) => ['dao_proposals', { dao: m[1], status: m[2] }]],
+  [new RegExp(`\\b(?:dao|info)\\b.*?${DAO}`, 'i'), (m) => ['dao_info', { dao: m[1] }]],
   [/\b(balance|what do i (have|hold)|holdings|portfolio)\b/i, () => ['get_balances', {}]],
   [/\bvalidators?\b/i, () => ['list_validators', {}]],
   [/\b(chains|supported chains)\b/i, () => ['intents_chains', {}]],
@@ -44,7 +52,10 @@ export const HELP = `I am running without an LLM key, so I only understand these
 - swap 1 NEAR to USDC on base to 0x... | quote 1 NEAR to USDC on eth
 - request 0.01 ETH on base refund 0x...   (optionally: ... as wNEAR)
 - create agent key for wrap.near methods near_deposit allowance 0.1
-- revoke key ed25519:...  |  post hello NEAR`;
+- revoke key ed25519:...  |  post hello NEAR
+- Sputnik DAO: dao ref-finance.sputnik-dao.near | proposals of ref-finance.sputnik-dao.near
+  propose transfer 1 NEAR to alice.near on x.sputnik-dao.near for Grant | propose poll Ship it? on x.sputnik-dao.near
+  propose add bob.near to role council on x.sputnik-dao.near | approve proposal 12 on x.sputnik-dao.near | finalize proposal 12 on x.sputnik-dao.near`;
 
 export async function chatOffline(messages, account) {
   const text = String(messages.at(-1)?.content ?? '').trim();

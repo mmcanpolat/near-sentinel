@@ -5,6 +5,7 @@ import * as b from '../near/builders.js';
 import { generateAgentKey, listKeys, buildCreateAgentKey, buildRevokeAgentKey, checkKeyAllows } from '../guard/keys.js';
 import { makeCard, cardForModel, getPolicy } from '../guard/pipeline.js';
 import { entries } from '../guard/ledger.js';
+import * as dao from '../near/sputnik.js';
 import { accessKey } from '../near/rpc.js';
 import { fnCall, tx } from '../near/actions.js';
 import { yoctoToNear } from '../lib/units.js';
@@ -34,6 +35,8 @@ export const TOOLS = [
       const r = checkKeyAllows(key, [tx(args.contract, [fnCall(args.method, {}, BigInt(Math.round((args.gasTgas ?? 30) * 1e12)), dep)])]);
       return { ...r, key: { ...key, allowanceNear: key.allowanceYocto ? yoctoToNear(key.allowanceYocto) : null } };
     } },
+  { name: 'dao_info', description: 'Sputnik DAO v2 overview: treasury balance, roles and who is in them, proposal bond, voting period.', parameters: obj({ dao: S('DAO account, e.g. ref-finance.sputnik-dao.near') }, ['dao']), read: true, run: ({ args }) => dao.sputnikInfo(args) },
+  { name: 'dao_proposals', description: 'Newest proposals of a Sputnik DAO with status and vote tally. Optional status filter (InProgress, Approved, Rejected, Expired, Failed).', parameters: obj({ dao: S('DAO account'), status: S('optional status filter'), limit: { type: 'number' } }, ['dao']), read: true, run: ({ args }) => dao.sputnikProposals(args) },
   // ---- builds (return a card)
   { name: 'send_near', description: 'Prepare a native NEAR transfer.', parameters: obj({ to: S('NEAR account id'), amount: S('NEAR amount, e.g. "1.5"') }, ['to', 'amount']), build: ({ account, args }) => b.sendNear({ account, ...args }) },
   { name: 'send_token', description: 'Prepare a NEP-141 token transfer (registers the receiver when needed).', parameters: obj({ token: S('symbol or contract'), to: S('NEAR account id'), amount: S('human amount') }, ['token', 'to', 'amount']), build: ({ account, args }) => b.sendToken({ account, ...args }) },
@@ -47,6 +50,12 @@ export const TOOLS = [
     parameters: obj({ from: S('token to sell on NEAR (NEAR, USDC, ...)'), to: S('token symbol to receive'), toChain: S('near, eth, base, arb, sol, btc, ...'), amount: S('amount of `from`'), recipient: S('receiving address on toChain'), quoteOnly: { type: 'boolean' }, slippagePct: { type: 'number' } }, ['from', 'to', 'amount']), build: ({ account, args }) => b.intentsSwap({ account, ...args }) },
   { name: 'intents_receive', description: 'Agent earns across chains: create a payment request. A payer on another chain pays a one-time deposit address and the account receives a NEAR-side token. Nothing to sign.',
     parameters: obj({ fromChain: S('payer\'s chain'), fromToken: S('payer\'s token symbol'), amount: S('amount the payer sends'), toToken: S('NEAR-side token to receive, default USDC'), refundAddress: S('payer\'s address on fromChain, for refunds') }, ['fromChain', 'fromToken', 'amount', 'refundAddress']), build: ({ account, args }) => b.intentsReceive({ account, ...args }) },
+  { name: 'dao_propose', description: 'Create a Sputnik DAO proposal (the user signs; attaches the DAO\'s proposal bond). type: transfer (receiver, amount, token), poll (description is the question), add_member / remove_member (member, role), function_call (contract, method, args). Governance changes are not available.',
+    parameters: obj({ dao: S('DAO account'), type: { type: 'string', enum: ['transfer', 'poll', 'add_member', 'remove_member', 'function_call'] }, description: S('public proposal text'), receiver: S('transfer receiver'), amount: S('transfer amount, human units'), token: S('NEAR (default) or token symbol/contract'), member: S('account for add/remove member'), role: S('DAO role name'), contract: S('function_call target'), method: S('function_call method'), args: { type: 'object' }, depositNear: S('NEAR the DAO attaches, default 0') }, ['dao', 'type']),
+    build: ({ account, args }) => dao.sputnikPropose({ account, ...args }) },
+  { name: 'dao_vote', description: 'Vote on a Sputnik DAO proposal, or finalize an expired one. action: approve | reject | remove | finalize. The user signs.',
+    parameters: obj({ dao: S('DAO account'), id: { type: 'number', description: 'proposal number' }, action: { type: 'string', enum: ['approve', 'reject', 'remove', 'finalize'] } }, ['dao', 'id', 'action']),
+    build: ({ account, args }) => dao.sputnikVote({ account, ...args }) },
   { name: 'agent_key_create', description: 'Give the agent a restricted function-call access key bound to ONE contract, with a method list and a gas allowance. Generates the agent\'s keypair locally if no publicKey is given; the private key never leaves the agent runtime. The user signs the AddKey.',
     parameters: obj({ contract: S('the one contract the key may call'), methods: { type: 'array', items: { type: 'string' } }, allowanceNear: S('gas budget in NEAR, e.g. "0.1"'), publicKey: S('existing agent public key; omit to generate') }, ['contract', 'methods']),
     build: async ({ account, args }) => buildCreateAgentKey({ account, ...args, publicKey: args.publicKey ?? generateAgentKey().publicKey }) },

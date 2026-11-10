@@ -48,3 +48,22 @@ test('policy cannot be changed through chat, only through the policy endpoint', 
   assert.ok(!TOOLS.some((t) => /policy/.test(t.name) && !t.read), 'no tool may write the policy');
   assert.ok(!TOOLS.some((t) => /sign|send_transaction|broadcast/.test(t.name)), 'no tool may sign or broadcast');
 });
+
+test('Sputnik DAO: live read of ref-finance.sputnik-dao.near, proposal card for a council member, refusal for an outsider', opts, async () => {
+  const { sputnikInfo, sputnikProposals } = await import('../src/near/sputnik.js');
+  const { chatOffline } = await import('../src/agent/offline.js');
+  const DAO = 'ref-finance.sputnik-dao.near';
+  const info = await sputnikInfo({ dao: DAO });
+  assert.equal(info.proposalBondNear, '1');
+  assert.ok(info.roles.some((r) => r.name === 'council'));
+  const list = await sputnikProposals({ dao: DAO, limit: 3 });
+  assert.equal(list.shown.length, 3);
+  const council = info.roles.find((r) => r.name === 'council').members[0];
+  const card = (await chatOffline([{ role: 'user', content: `propose poll Test question only? on ${DAO}` }], council)).cards[0];
+  assert.equal(card.transactions[0].actions[0].params.methodName, 'add_proposal');
+  assert.equal(card.transactions[0].actions[0].params.deposit, '1000000000000000000000000');
+  const no = await chatOffline([{ role: 'user', content: `propose poll Test question only? on ${DAO}` }], 'root.near');
+  assert.match(no.reply, /not allowed to add "vote" proposals/);
+  const closed = await chatOffline([{ role: 'user', content: `approve proposal 1059 on ${DAO}` }], council);
+  assert.match(closed.reply, /is Approved/);
+});

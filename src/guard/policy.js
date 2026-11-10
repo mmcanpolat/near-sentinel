@@ -19,6 +19,10 @@ const REGISTRATION_MAX = 5n * 10n ** 23n; // 0.5 NEAR
 const isConversion = (e) => e.kind === 'native_out' && e.via === 'attached_deposit' && e.to === 'wrap.near' && e.method === 'near_deposit';
 const isRegistration = (e) => e.kind === 'native_out' && e.via === 'attached_deposit' && e.method === 'storage_deposit' && e.amount <= REGISTRATION_MAX;
 export const NATIVE = 'near';
+export const DAO_METHODS = ['add_proposal', 'act_proposal'];
+// Proposal kinds an agent may create in a DAO. Policy changes, upgrades and the like are human-only.
+const PROPOSAL_KINDS = new Set(['Transfer', 'Vote', 'AddMemberToRole', 'RemoveMemberFromRole', 'FunctionCall']);
+const ACT_ACTIONS = new Set(['VoteApprove', 'VoteReject', 'VoteRemove', 'Finalize']);
 // wNEAR is NEAR in another wrapper: spending it counts against the NEAR limits.
 export const canon = (t) => (t === 'wrap.near' ? NATIVE : t);
 const DAY_MS = 24 * 3600 * 1000;
@@ -35,6 +39,8 @@ export const DEFAULT_POLICY = Object.freeze({
     'social.near': ['set'],
   },
   blockedContracts: [],
+  // Any account under these suffixes is a factory-created Sputnik DAO; only add_proposal / act_proposal are allowed on it.
+  allowedContractSuffixes: ['.sputnik-dao.near'],
   // 'any' or 'allowlist'. With an allowlist, every outgoing transfer must go to a listed account
   // (or to an allowed contract, or to a deposit address produced by a trusted builder).
   recipients: { mode: 'any', list: [] },
@@ -59,6 +65,7 @@ export function validatePolicy(p) {
   const list = (v, name) => { if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) errors.push(`${name} must be a list of strings`); };
   list(p.allowedContracts, 'allowedContracts');
   list(p.blockedContracts, 'blockedContracts');
+  list(p.allowedContractSuffixes, 'allowedContractSuffixes');
   list(p.recipients?.list, 'recipients.list');
   if (!['any', 'allowlist'].includes(p.recipients?.mode)) errors.push('recipients.mode must be any or allowlist');
   if (!['allow', 'confirm', 'deny'].includes(p.unlistedToken)) errors.push('unlistedToken must be allow, confirm or deny');
@@ -88,6 +95,7 @@ export function evaluate(policy, txs, ctx = {}) {
   const sym = (tok) => (tok === NATIVE ? 'NEAR' : ctx.symbols?.[tok] ?? tok);
   const fmt = (tok, raw) => `${formatUnits(raw, decimals(tok) ?? 0)} ${sym(tok)}`;
   const allowedC = new Set(policy.allowedContracts);
+  const isDao = (c) => (policy.allowedContractSuffixes ?? []).some((sfx) => sfx.startsWith('.') && c.endsWith(sfx) && c.length > sfx.length);
   const trusted = ctx.trustedRecipients ?? new Set();
 
   // ---- 1. Things an agent must never do, regardless of configuration -------------------------
@@ -103,6 +111,10 @@ export function evaluate(policy, txs, ctx = {}) {
   for (const e of effects.filter((x) => x.kind === 'call')) {
     if (policy.blockedContracts.includes(e.contract)) { add('deny', 'contract.blocked', `${e.contract} is on the blocked list.`); continue; }
     const standardFt = FT_STANDARD.has(e.method);
+    if (isDao(e.contract)) {
+      if (!DAO_METHODS.includes(e.method)) add('deny', 'method.not_allowed', `Method ${e.method}() is not allowed on DAO ${e.contract} (allowed: ${DAO_METHODS.join(', ')}).`);
+      continue;
+    }
     if (!allowedC.has(e.contract) && !standardFt) {
       add('deny', 'contract.not_allowed', `${e.contract}.${e.method}() is not on the allowed contracts list.`);
       continue;
@@ -158,6 +170,18 @@ export function evaluate(policy, txs, ctx = {}) {
     if (confirmAbove != null && amount > confirmAbove) add('confirm', 'limit.confirm_above', `${fmt(tok, amount)} is above your confirmation threshold of ${fmt(tok, confirmAbove)}.`);
     summary[summary.length - 1].dailyUsed = formatUnits(used, dec);
     summary[summary.length - 1].dailyCap = l.daily ?? null;
+  }
+
+  // ---- 4b. DAO proposals and votes ---------------------------------------------------------
+  for (const e of effects.filter((x) => x.kind === 'call' && isDao(x.contract))) {
+    if (e.method === 'add_proposal') {
+      const kind = e.args?.proposal?.kind, name = typeof kind === 'string' ? kind : Object.keys(kind ?? {})[0];
+      if (!PROPOSAL_KINDS.has(name)) add('deny', 'dao.kind_not_allowed', `A "${name ?? 'unknown'}" proposal is refused: agents may only create ${[...PROPOSAL_KINDS].join(', ')} proposals.`);
+      else if (name === 'FunctionCall') add('confirm', 'dao.function_call', `This proposes that ${e.contract} calls ${(kind.FunctionCall?.actions ?? []).map((a) => a.method_name).join(', ')}() on ${kind.FunctionCall?.receiver_id}; if the DAO approves it, that runs with the DAO's funds.`);
+    } else if (e.method === 'act_proposal') {
+      if (!ACT_ACTIONS.has(e.args?.action)) add('deny', 'dao.action_not_allowed', `act_proposal action "${e.args?.action}" is not allowed.`);
+      if (e.deposit > 1n) add('deny', 'dao.unexpected_deposit', 'Voting never needs an attached deposit.');
+    }
   }
 
   // ---- 5. Gas ----------------------------------------------------------------------------

@@ -45,8 +45,9 @@ export async function makeCard(account, built, { title } = {}) {
   const verdict = txs.length
     ? evaluate(policy, txs, { signer: account, ledger: entries(account), decimals, symbols, trustedRecipients: new Set(built.trustedRecipients ?? []) })
     : { verdict: 'allow', findings: [], spends: [] };
-  const findings = [...verdict.findings, ...pre.failures.map((m) => ({ level: 'deny', rule: 'precheck', message: m }))];
-  const level = findings.some((f) => f.level === 'deny') ? 'deny' : verdict.verdict;
+  const findings = [...verdict.findings, ...(built.confirm ?? []).map((m) => ({ level: 'confirm', rule: 'builder.confirm', message: m })), ...pre.failures.map((m) => ({ level: 'deny', rule: 'precheck', message: m }))];
+  const level = findings.some((f) => f.level === 'deny') ? 'deny' : findings.some((f) => f.level === 'confirm') ? 'confirm' : 'allow';
+  if (level !== 'allow') for (let i = findings.length - 1; i >= 0; i--) if (findings[i].level === 'ok') findings.splice(i, 1);
   const id = crypto.randomUUID();
   const card = {
     id, title: title ?? built.preview?.op ?? 'transaction', account,

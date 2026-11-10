@@ -17,6 +17,18 @@ const KNOWN = {
   nft_transfer: (c, d, a) => `Send NFT #${a.token_id} of ${c} to ${a.receiver_id}`,
 };
 
+function explainDao(c, method, args, deposit) {
+  if (method === 'add_proposal') {
+    const k = args.proposal?.kind, n = typeof k === 'string' ? k : Object.keys(k ?? {})[0], b = k?.[n] ?? {};
+    const what = n === 'Transfer' ? `pay ${b.amount} ${b.token_id || 'yoctoNEAR'} to ${b.receiver_id}`
+      : n === 'Vote' ? 'poll the members' : n === 'AddMemberToRole' ? `add ${b.member_id} to role ${b.role}` : n === 'RemoveMemberFromRole' ? `remove ${b.member_id} from role ${b.role}`
+      : n === 'FunctionCall' ? `call ${(b.actions ?? []).map((a) => a.method_name).join(', ')}() on ${b.receiver_id}` : `a ${n} change`;
+    return `Propose to DAO ${c}: ${what} ("${String(args.proposal?.description ?? '').slice(0, 80)}"). Attaches the ${yoctoToNear(deposit)} NEAR proposal bond; nothing executes until members vote.`;
+  }
+  const a = { VoteApprove: 'Approve', VoteReject: 'Reject', VoteRemove: 'Vote to remove', Finalize: 'Finalize' }[args.action] ?? args.action;
+  return `${a} proposal #${args.id} in DAO ${c}${args.action === 'Finalize' ? ' (closes it after its voting period)' : ''}`;
+}
+
 export function explainTx(t, meta = {}) {
   const lines = [];
   for (const a of t.actions) {
@@ -24,7 +36,8 @@ export function explainTx(t, meta = {}) {
     if (a.type === 'Transfer') lines.push(`Send ${yoctoToNear(p.deposit)} NEAR to ${t.receiverId}`);
     else if (a.type === 'FunctionCall') {
       const args = typeof p.args === 'object' ? p.args : {};
-      if (p.methodName === 'ft_transfer') {
+      if ((p.methodName === 'add_proposal' || p.methodName === 'act_proposal') && t.receiverId.endsWith('.sputnik-dao.near')) lines.push(explainDao(t.receiverId, p.methodName, args, BigInt(p.deposit ?? 0)));
+      else if (p.methodName === 'ft_transfer') {
         const d = meta.decimals?.[t.receiverId] ?? 0, s = meta.symbols?.[t.receiverId] ?? t.receiverId;
         lines.push(`Send ${formatUnits(args.amount, d)} ${s} to ${args.receiver_id}`);
       } else if (p.methodName === 'ft_transfer_call') {

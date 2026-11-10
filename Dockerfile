@@ -8,5 +8,5 @@ RUN mkdir -p /app/data && chown -R node:node /app/data
 USER node
 ENV HOST=0.0.0.0 PORT=3000 SENTINEL_DATA_DIR=/app/data
 EXPOSE 3000
-HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
+HEALTHCHECK --interval=10s --start-period=3s CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 CMD ["node", "src/start.js"]

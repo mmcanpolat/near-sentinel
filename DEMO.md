@@ -10,6 +10,7 @@
 0:50 Type `create agent key for wrap.near methods near_deposit allowance 0.05`. "For autonomy the agent gets a NEAR function-call key: one contract, listed methods, a gas budget, and the protocol itself forbids deposits. I can revoke it any time."
 1:05 Type `quote 1 NEAR to USDC on base`. "Cross-chain through NEAR Intents: the agent can pay and get paid on other chains."
 1:15 Show the Policy panel; change the recipient mode to allowlist. "Only I can edit this. The agent has no tool for it."
+1:18 Switch preview to `refchef.near`, type `propose poll Should we fund a hackathon? on ref-finance.sputnik-dao.near`. "Same guard for DAOs: it read the DAO's live roles, bond and permissions before showing the card."
 1:25 End card: repo link, "Built at NEAR HACKATHON".
 
 ## X post draft
@@ -29,7 +30,7 @@ Repo + demo below. #NEARHackathon
 
 - Project name: NEAR Sentinel
 - One-liner: A guarded AI agent for NEAR: policy engine, function-call-key sandbox, live pre-checks, NEAR Intents cross-chain.
-- Tracks: Unstoppable DeFi, Agent Economy, Open Innovation, AI Security & Defense
+- Tracks: Unstoppable DeFi, Agent Economy, Open Innovation, AI Security & Defense (+ Social Money: Sputnik DAO)
 - Repo URL, demo video / X post URL: yours
 - Tech: Node 22 (no dependencies), NEAR JSON-RPC, NEAR Intents 1Click, Ref Finance, near-connect
-- Run: `make run` then open http://localhost:3000
+- Run: `npm start` (or `make run`) then open http://localhost:3000

@@ -4,3 +4,10 @@ data/*.json
 data/agent-keys/
 *.log
 .DS_Store
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+data/*
+!data/.gitkeep

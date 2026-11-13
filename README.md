@@ -21,6 +21,14 @@ In the page (it previews the public account `near`), paste these three lines:
 2. `derive addresses for ethereum-1` (or the **Cross-chain** tab) : the Ethereum and Bitcoin addresses this NEAR account controls through NEAR Chain Signatures, read from the MPC contract and re-derived locally.
 3. `sign payload 0x<64 hex> path ethereum-1` : an unsigned `v1.signer.sign` call (1 yocto) that runs through the same policy and needs a tick. Then open **Activity**: every proposal above is in the **agent safety report** with its verdict, checks and reason; **Download JSON** exports it.
 
+## How AI tools were used
+
+The code was written with Claude Code (Anthropic's CLI agent) as the pair programmer, and every commit made that way carries a `Co-Authored-By: Claude` trailer in `git log`. Claude drafted the modules, the tests and the docs; the maintainer set the design (the agent never signs, policy is user-only, the chain is the source of truth) and reviewed and ran everything. Nothing in the repository was generated at runtime by an AI and committed as data. At runtime the LLM is optional (OpenAI-compatible endpoint, NEAR AI Cloud preset); the default offline parser needs no AI at all.
+
+## Live demo path (no keys, no wallet)
+
+`git clone https://github.com/mmcanpolat/near-sentinel && cd near-sentinel && npm start`, open http://127.0.0.1:3000, and paste the three lines from "What to try in 60 seconds". It only needs Node 22+ and internet access to public NEAR mainnet RPC (read-only). There is no hosted instance; the demo video in the submission shows the same flow.
+
 ## The problem
 
 AI agents that move money have two bad options today: hold a key (one prompt injection empties the wallet) or ask the user to sign blindly (the user cannot tell what a hex blob does). NEAR has unusually good primitives for a third way, function-call access keys and NEAR Intents, but nothing ties them together into a safe agent workflow.
@@ -76,7 +84,7 @@ Every row is checked by `npm run selftest` (offline) and most also by `LIVE=1 np
 
 | Track | Requirement | Where | Exact command |
 |---|---|---|---|
-| AI Security & Defense | Spending limits, policy engine | `src/guard/policy.js`, ledger | `node --test test/policy.test.js` (27 tests), `send 50 NEAR to root.near` in the UI |
+| AI Security & Defense | Spending limits, policy engine | `src/guard/policy.js`, ledger | `node --test test/policy.test.js` (26 tests), `send 50 NEAR to root.near` in the UI |
 | | Function-call keys / sandboxed wallets | `src/guard/keys.js`, `agent_key_*` tools | `node --test test/keys.test.js`, `create agent key for wrap.near methods near_deposit allowance 0.05` |
 | | Pre-sign checks, no blind signing | `precheck.js`, `explain.js` | `send 1 NEAR to nonexistentaccount99887.near` (refused from live state) |
 | | Agent cannot sign or edit policy | `src/agent/tools.js` | `node --test test/agent.test.js` |
@@ -183,4 +191,4 @@ Not verified:
 
 ## License
 
-MIT, see LICENSE. All code in this repository was written between 1 and 10 November 2026 for this hackathon; it uses public NEAR RPC, the NEAR Intents 1Click API, the Ref router and FastNEAR's public API, and loads `@hot-labs/near-connect` from jsDelivr at runtime.
+MIT, see LICENSE. All code in this repository was written for this hackathon inside the 1-14 November 2026 window (the git history starts on 10 November 2026; no earlier commits); it uses public NEAR RPC, the NEAR Intents 1Click API, the Ref router and FastNEAR's public API, and loads `@hot-labs/near-connect` from jsDelivr at runtime.
